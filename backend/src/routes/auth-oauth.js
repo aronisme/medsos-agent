@@ -1,20 +1,12 @@
 const express = require('express');
 const axios = require('axios');
-const db = require('../db');
+const { db } = require('../config/firebase');
 const env = require('../config/env');
 const router = express.Router();
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-/**
- * OAuth Facebook untuk MVP.
- * Catatan: Untuk dev (tanpa app review), flow ini berfungsi penuh untuk
- * user yang merupakan admin/test dari app (apps in development mode).
- *
- * Step 1: GET /api/auth/facebook — redirect ke Facebook login dialog
- * (perlu FB_APP_ID + FB_APP_SECRET di .env, dan redirect URI terdaftar)
- */
 router.get('/facebook', (req, res) => {
   if (!env.fbAppId) {
     return res.status(400).json({
@@ -29,23 +21,11 @@ router.get('/facebook', (req, res) => {
   res.redirect(url);
 });
 
-/**
- * Step 2: GET /api/auth/facebook/callback?code=...&state=...
- * - Tukar code → short-lived token
- * - Tukar → long-lived token (60 hari)
- * - Ambil pages + instagram_business_account
- * - Simpan ke social_accounts
- *
- * Catatan: Untuk demo sederhana tanpa session state, user token disimpan
- * sementara via parameter `state` (berisi user id bisa dipakai di produksi).
- * Di MVP ini: create/ambil demo user agar alur tetap terlihat.
- */
 router.get('/facebook/callback', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).send('Missing code');
 
   try {
-    // 1) Short-lived token
     const { data: tokenData } = await axios.get(`${GRAPH}/oauth/access_token`, {
       params: {
         client_id: env.fbAppId,
@@ -55,7 +35,6 @@ router.get('/facebook/callback', async (req, res) => {
       },
     });
 
-    // 2) Long-lived token (60 hari)
     const { data: longData } = await axios.get(`${GRAPH}/oauth/access_token`, {
       params: {
         grant_type: 'fb_exchange_token',
@@ -66,40 +45,66 @@ router.get('/facebook/callback', async (req, res) => {
     });
     const longToken = longData.access_token;
     const expiresAt = new Date(Date.now() + (longData.expires_in || 60 * 24 * 3600) * 1000)
-      .toISOString()
-      .slice(0, 19)
-      .replace('T', ' ');
+      .toISOString();
 
-    // 3) Ambil pages
     const { data: pagesData } = await axios.get(`${GRAPH}/me/accounts`, {
       params: { access_token: longToken },
     });
 
-    // Target user: cari/ambil demo user (di produksi: dari session/JWT)
-    let user = db.prepare('SELECT * FROM users WHERE email = ?').get('demo@demo.com');
-    if (!user) {
-      const r = db
-        .prepare(`INSERT INTO users (name, email, password_hash) VALUES ('Demo User', 'demo@demo.com', 'oauth')`)
-        .run();
-      user = db.prepare('SELECT * FROM users WHERE id = ?').get(r.lastInsertRowid);
+    // Cari user demo (di produksi harusnya ambil dari session/JWT state)
+    const userSnap = await db.collection('users').where('email', '==', 'owner@medsos.local').limit(1).get();
+    let userId;
+    if (userSnap.empty) {
+      const newUser = await db.collection('users').add({
+        name: 'Owner Medsos',
+        email: 'owner@medsos.local',
+        password_hash: 'oauth',
+        created_at: new Date().toISOString()
+      });
+      userId = newUser.id;
+    } else {
+      userId = userSnap.docs[0].id;
     }
 
     let saved = 0;
+    
+    // Helper function for upsert
+    const upsertAccount = async (platform, page_id, access_token, page_name) => {
+      const snap = await db.collection('social_accounts')
+        .where('user_id', '==', userId)
+        .where('platform', '==', platform)
+        .where('page_id', '==', page_id)
+        .limit(1)
+        .get();
+        
+      if (snap.empty) {
+        await db.collection('social_accounts').add({
+          user_id: userId,
+          platform,
+          page_id,
+          access_token,
+          page_name,
+          expires_at: 'Never',
+          is_active: 1,
+          created_at: new Date().toISOString()
+        });
+      } else {
+        await snap.docs[0].ref.update({
+          access_token,
+          page_name,
+          expires_at: 'Never',
+          is_active: 1
+        });
+      }
+    };
+
     for (const page of pagesData.data || []) {
       const pageToken = page.access_token || longToken;
-      db.prepare(
-        `INSERT INTO social_accounts (user_id, platform, page_id, access_token, page_name, expires_at, is_active)
-         VALUES (?, 'facebook', ?, ?, ?, 'Never', 1)
-         ON CONFLICT (user_id, platform, page_id) DO UPDATE SET access_token = excluded.access_token, expires_at = 'Never', is_active = 1`
-      ).run(user.id, page.id, pageToken, page.name);
+      await upsertAccount('facebook', page.id, pageToken, page.name);
       saved++;
 
       if (page.instagram_business_account) {
-        db.prepare(
-          `INSERT INTO social_accounts (user_id, platform, page_id, access_token, page_name, expires_at, is_active)
-           VALUES (?, 'instagram', ?, ?, ?, 'Never', 1)
-           ON CONFLICT (user_id, platform, page_id) DO UPDATE SET access_token = excluded.access_token, expires_at = 'Never', is_active = 1`
-        ).run(user.id, page.instagram_business_account.id, pageToken, page.instagram_business_account.username);
+        await upsertAccount('instagram', page.instagram_business_account.id, pageToken, page.instagram_business_account.username || page.name);
         saved++;
       }
     }
@@ -109,7 +114,7 @@ router.get('/facebook/callback', async (req, res) => {
       <div style="text-align:center">
         <h2>✅ Berhasil terhubung!</h2>
         <p>${saved} akun tersimpan.</p>
-        <p>Login manual: <b>demo@demo.com / demo1234</b></p>
+        <p>Silakan kembali ke aplikasi.</p>
         <a href="http://localhost:5173/dashboard/accounts">Kembali ke Dashboard</a>
       </div></body></html>
     `);

@@ -6,3 +6,5 @@ backend/data/
 backend/storage/uploads/
 .DS_Store
 .env.*
+
+backend/serviceAccountKey.json

@@ -1,43 +1,41 @@
-const db = require('../db');
-const { publishTarget } = require('../services/postService');
+const { db } = require('../config/firebase');
+const { publishPostNow } = require('../services/postService');
 
 /**
- * Scheduler in-process: scan postingan terjadwal yang sudah waktunya,
- * lalu publish semua target pending-nya.
- * Ganti dengan Bull + Redis saat produksi (lih. implementation plan).
+ * Memproses postingan terjadwal yang sudah waktunya.
+ * Fungsi ini bisa dipanggil manual via cron route.
  */
-function startScheduler(intervalMs = 30000) {
-  const timer = setInterval(async () => {
-    try {
-      const due = db
-        .prepare(
-          `SELECT pt.id AS target_id, p.id AS post_id
-           FROM post_targets pt
-           JOIN posts p ON p.id = pt.post_id
-           WHERE p.status = 'scheduled'
-             AND p.scheduled_at IS NOT NULL
-             AND p.scheduled_at <= datetime('now')
-             AND pt.status IN ('pending','failed')
-           ORDER BY p.scheduled_at ASC
-           LIMIT 20`
-        )
-        .all();
-
-      for (const row of due) {
-        try {
-          await publishTarget(row.target_id);
-          console.log(`[scheduler] ✅ Post #${row.post_id} → target #${row.target_id}`);
-        } catch (e) {
-          console.error(`[scheduler] ❌ Post #${row.post_id} → target #${row.target_id}: ${e.message}`);
-        }
-      }
-    } catch (e) {
-      console.error('[scheduler] error:', e.message);
+async function processScheduledPosts() {
+  const results = [];
+  try {
+    const snapshot = await db.collection('posts')
+      .where('status', '==', 'scheduled')
+      .where('scheduled_at', '<=', new Date().toISOString())
+      .get();
+      
+    if (snapshot.empty) {
+      return results;
     }
-  }, intervalMs);
 
-  console.log(`[scheduler] Aktif — cek jadwal setiap ${intervalMs / 1000} detik.`);
-  return timer;
+    // Since firestore doesn't do joins, we just process all scheduled posts
+    // and rely on publishPostNow to handle targets correctly.
+    for (const doc of snapshot.docs) {
+      try {
+        await publishPostNow(doc.id);
+        const msg = `[scheduler] ✅ Processed Post #${doc.id}`;
+        console.log(msg);
+        results.push(msg);
+      } catch (e) {
+        const err = `[scheduler] ❌ Process Post #${doc.id} failed: ${e.message}`;
+        console.error(err);
+        results.push(err);
+      }
+    }
+  } catch (e) {
+    console.error('[scheduler] error:', e.message);
+    throw e;
+  }
+  return results;
 }
 
-module.exports = { startScheduler };
+module.exports = { processScheduledPosts };

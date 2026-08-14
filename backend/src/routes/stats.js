@@ -1,48 +1,68 @@
 const express = require('express');
-const db = require('../db');
+const { db } = require('../config/firebase');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
 router.use(authRequired);
 
-// GET /api/stats â€” statistik dashboard
-router.get('/', (req, res) => {
-  const uid = req.user.id;
+// GET /api/stats — statistik dashboard
+router.get('/', async (req, res) => {
+  try {
+    const uid = req.user.id;
 
-  const counts = db
-    .prepare(`SELECT status, COUNT(*) AS total FROM posts WHERE user_id = ? GROUP BY status`)
-    .all(uid);
+    // Ambil semua post user ini (untuk statistik)
+    const postsSnap = await db.collection('posts')
+      .where('user_id', '==', uid)
+      .orderBy('created_at', 'desc')
+      .get();
+      
+    const summary = { draft: 0, scheduled: 0, posted: 0, failed: 0 };
+    const platformStats = {};
+    const recent = [];
+    
+    postsSnap.docs.forEach((doc, idx) => {
+      const p = doc.data();
+      // Hitung summary status
+      if (summary[p.status] !== undefined) summary[p.status]++;
+      
+      // Hitung target stats by platform
+      const targets = p.targets || [];
+      let successCount = 0;
+      
+      targets.forEach(t => {
+        if (!platformStats[t.platform]) platformStats[t.platform] = { platform: t.platform, total: 0, success: 0 };
+        platformStats[t.platform].total++;
+        if (t.status === 'success') {
+          platformStats[t.platform].success++;
+          successCount++;
+        }
+      });
+      
+      // Ambil 8 recent
+      if (idx < 8) {
+        recent.push({
+          id: doc.id,
+          ...p,
+          target_count: targets.length,
+          success_count: successCount
+        });
+      }
+    });
 
-  const byPlatform = db
-    .prepare(
-      `SELECT t.platform, COUNT(*) AS total,
-              SUM(CASE WHEN t.status = 'success' THEN 1 ELSE 0 END) AS success
-       FROM post_targets t
-       JOIN posts p ON p.id = t.post_id AND p.user_id = ?
-       GROUP BY t.platform`
-    )
-    .all(uid);
+    const byPlatform = Object.values(platformStats);
 
-  const recent = db
-    .prepare(
-      `SELECT p.*, COUNT(t.id) AS target_count,
-              SUM(CASE WHEN t.status = 'success' THEN 1 ELSE 0 END) AS success_count
-       FROM posts p
-       LEFT JOIN post_targets t ON t.post_id = p.id
-       WHERE p.user_id = ?
-       GROUP BY p.id
-       ORDER BY p.created_at DESC LIMIT 8`
-    )
-    .all(uid);
+    const logsSnap = await db.collection('logs')
+      .where('user_id', '==', uid)
+      .orderBy('created_at', 'desc')
+      .limit(10)
+      .get();
+      
+    const recentLogs = logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-  const recentLogs = db
-    .prepare(`SELECT * FROM logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 10`)
-    .all(uid);
-
-  const summary = { draft: 0, scheduled: 0, posted: 0, failed: 0 };
-  for (const c of counts) summary[c.status] = c.total;
-
-  res.json({ summary, byPlatform, recent, recentLogs });
+    res.json({ summary, byPlatform, recent, recentLogs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
