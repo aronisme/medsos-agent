@@ -21,9 +21,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.dispatchEvent(new Event('auth:logout'));
+      // Don't trigger logout event if the request was the login attempt itself
+      if (!error.config?.url?.includes('/auth/login')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.dispatchEvent(new Event('auth:logout'));
+      }
     }
     return Promise.reject(error);
   }
