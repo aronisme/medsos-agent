@@ -22,22 +22,28 @@ export const AuthProvider = ({ children }) => {
     };
     window.addEventListener('auth:logout', handleLogout);
 
-    // Single-user auto authentication on mount
-    api.get('/auth/me')
-      .then((res) => {
-        const { user: u, token: t } = res.data;
-        setUser(u);
-        if (t) {
-          setToken(t);
-          localStorage.setItem('token', t);
-          localStorage.setItem('user', JSON.stringify(u));
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    // Only verify if a token already exists in localStorage
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      api.get('/auth/me')
+        .then((res) => {
+          if (res.data?.user) {
+            setUser(res.data.user);
+          } else {
+            handleLogout();
+          }
+        })
+        .catch(() => {
+          handleLogout();
+        })
+        .finally(() => setLoading(false));
+    } else {
+      handleLogout();
+      setLoading(false);
+    }
 
     return () => window.removeEventListener('auth:logout', handleLogout);
-  }, [token]);
+  }, []);
 
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });

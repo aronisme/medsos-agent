@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Bot, Lock, Mail, User as UserIcon, ArrowRight, Sparkles } from 'lucide-react';
+import { Bot, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export default function LoginModal() {
-  const { login, register } = useAuth();
-  const [isRegister, setIsRegister] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('demo@demo.com');
-  const [password, setPassword] = useState('demo1234');
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -16,13 +14,9 @@ export default function LoginModal() {
     setError('');
     setLoading(true);
     try {
-      if (isRegister) {
-        await register(name, email, password);
-      } else {
-        await login(email, password);
-      }
+      await login(email, password);
     } catch (err) {
-      setError(err.response?.data?.error || 'Terjadi kesalahan saat masuk.');
+      setError(err.response?.data?.error || 'Email atau password salah.');
     } finally {
       setLoading(false);
     }
@@ -43,10 +37,10 @@ export default function LoginModal() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali'}
+            Login Medsos Agent
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Medsos Agent — FB & IG Auto Poster Dashboard
+            Portal Khusus Administrator & Pemilik
           </p>
         </div>
 
@@ -57,28 +51,9 @@ export default function LoginModal() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 relative">
-          {isRegister && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Nama Lengkap
-              </label>
-              <div className="relative">
-                <UserIcon className="w-5 h-5 absolute left-3.5 top-3 text-slate-500" />
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Nama Pengguna"
-                  className="w-full pl-11 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-            </div>
-          )}
-
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              Email
+              Email Administrator
             </label>
             <div className="relative">
               <Mail className="w-5 h-5 absolute left-3.5 top-3 text-slate-500" />
@@ -116,40 +91,19 @@ export default function LoginModal() {
             className="w-full mt-2 py-3 rounded-xl gradient-btn flex items-center justify-center gap-2 text-sm font-bold shadow-lg"
           >
             {loading ? (
-              <span>Memproses...</span>
+              <span>Memverifikasi...</span>
             ) : (
               <>
-                <span>{isRegister ? 'Daftar Akun' : 'Masuk Dashboard'}</span>
+                <span>Masuk Dashboard</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
         </form>
 
-        <div className="mt-6 text-center text-xs text-slate-400">
-          {isRegister ? (
-            <span>
-              Sudah punya akun?{' '}
-              <button
-                type="button"
-                onClick={() => setIsRegister(false)}
-                className="text-indigo-400 font-semibold hover:underline"
-              >
-                Masuk
-              </button>
-            </span>
-          ) : (
-            <span>
-              Belum punya akun?{' '}
-              <button
-                type="button"
-                onClick={() => setIsRegister(true)}
-                className="text-indigo-400 font-semibold hover:underline"
-              >
-                Daftar sekarang
-              </button>
-            </span>
-          )}
+        <div className="mt-6 text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <span>Sistem diamankan dengan enkripsi privat</span>
         </div>
       </div>
     </div>
