@@ -1,6 +1,5 @@
 {
-  "framework": null,
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build -w frontend",
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {

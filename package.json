@@ -5,7 +5,6 @@
   "description": "FB & IG Auto Poster - schedule & post content to Facebook Pages and Instagram Business Accounts",
   "scripts": {
     "dev": "concurrently -n backend,frontend -c magenta,cyan \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "cd frontend && npm run build",
     "backend": "npm run dev -w backend",
     "frontend": "npm run dev -w frontend",
     "seed": "npm run seed -w backend",
