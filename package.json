@@ -1,0 +1,20 @@
+{
+  "name": "fb-ig-poster",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FB & IG Auto Poster - schedule & post content to Facebook Pages and Instagram Business Accounts",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c magenta,cyan \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "backend": "npm run dev -w backend",
+    "frontend": "npm run dev -w frontend",
+    "seed": "npm run seed -w backend",
+    "setup": "npm install && npm run seed -w backend"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
