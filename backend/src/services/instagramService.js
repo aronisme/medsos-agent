@@ -75,15 +75,21 @@ async function publishMedia(igUserId, token, creationId) {
  * @param {Array<{media_url:string, media_type:string}>} media
  */
 async function postToInstagram(account, content, media = []) {
-  if (media.length === 0) {
+  if (!Array.isArray(media)) media = [];
+  const normalizedMedia = media.map(m => ({
+    media_url: m?.url || m?.media_url || '',
+    media_type: m?.type || m?.media_type || 'image'
+  })).filter(m => Boolean(m.media_url));
+
+  if (normalizedMedia.length === 0) {
     throw new Error('Postingan Instagram wajib memiliki minimal 1 media (gambar/video).');
   }
   const igUserId = account.page_id;
   const token = account.access_token;
 
   let creationId;
-  if (media.length === 1) {
-    const m = media[0];
+  if (normalizedMedia.length === 1) {
+    const m = normalizedMedia[0];
     const isVideo = m.media_type === 'video';
     creationId = await createMediaContainer(igUserId, token, {
       imageUrl: isVideo ? undefined : m.media_url,
@@ -93,7 +99,7 @@ async function postToInstagram(account, content, media = []) {
   } else {
     // Carousel: buat container per item, lalu gabung
     const children = [];
-    for (const m of media) {
+    for (const m of normalizedMedia) {
       if (m.media_type === 'video') {
         throw new Error('Carousel Instagram tidak mendukung video. Gunakan gambar saja.');
       }

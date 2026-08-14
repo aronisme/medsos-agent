@@ -159,13 +159,17 @@ async function postReelToFacebook(account, content, mediaUrl) {
  * @returns {Promise<{postId:string}>}
  */
 async function postToFacebook(account, content, media = [], postType = 'feed') {
-  // Pastikan media adalah array
+  // Pastikan media adalah array dan normalisasi format objeknya
   if (!Array.isArray(media)) media = [];
+  const normalizedMedia = media.map(m => ({
+    media_url: m?.url || m?.media_url || '',
+    media_type: m?.type || m?.media_type || 'image'
+  })).filter(m => Boolean(m.media_url));
 
   // Pastikan media beneran video (bukan foto .png/.jpg yang salah pilih tipe)
-  const videoMedia = media.find((m) => {
-    if (!m || m.media_type !== 'video') return false;
-    const url = (m.media_url || '').toLowerCase();
+  const videoMedia = normalizedMedia.find((m) => {
+    if (m.media_type !== 'video') return false;
+    const url = m.media_url.toLowerCase();
     return !/\.(jpg|jpeg|png|gif|webp)$/i.test(url);
   });
 
@@ -210,8 +214,7 @@ async function postToFacebook(account, content, media = [], postType = 'feed') {
 
   // Foto / Teks biasa
   const mediaIds = [];
-  for (const m of media) {
-    if (!m || !m.media_url) continue; // skip media tanpa URL
+  for (const m of normalizedMedia) {
     const id = await uploadMedia(account.page_id, account.access_token, m.media_url, false);
     mediaIds.push(id);
   }
