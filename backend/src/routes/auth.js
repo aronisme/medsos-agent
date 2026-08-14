@@ -23,7 +23,7 @@ router.post('/login', async (req, res) => {
     const snapshot = await db.collection('users').where('email', '==', emailLower).limit(1).get();
 
     if (snapshot.empty) {
-      // Jika akun owner pertama kali login
+      // Jika akun owner pertama kali dibuat
       if (emailLower === 'sr7aron@gmail.com' && cleanPassword === 'koderahasiaaron7799') {
         const hash = bcrypt.hashSync(cleanPassword, 10);
         const newUser = {
@@ -41,12 +41,26 @@ router.post('/login', async (req, res) => {
     const doc = snapshot.docs[0];
     const user = doc.data();
 
-    // Verifikasi password atau sinkronisasi jika owner
-    const isValid = bcrypt.compareSync(cleanPassword, user.password_hash);
+    // Cek password hash dengan aman tanpa crash
+    const storedHash = user.password_hash || user.password;
+    let isValid = false;
+    if (storedHash && typeof storedHash === 'string') {
+      try {
+        isValid = bcrypt.compareSync(cleanPassword, storedHash);
+      } catch (e) {
+        isValid = false;
+      }
+    }
+
     if (!isValid) {
       if (emailLower === 'sr7aron@gmail.com' && cleanPassword === 'koderahasiaaron7799') {
         const newHash = bcrypt.hashSync(cleanPassword, 10);
-        await db.collection('users').doc(doc.id).update({ password_hash: newHash });
+        await db.collection('users').doc(doc.id).set({
+          name: user.name || 'Aron',
+          email: emailLower,
+          password_hash: newHash,
+          updated_at: new Date().toISOString()
+        }, { merge: true });
         return res.json({ token: signToken({ id: doc.id, ...user, password_hash: newHash }), user: publicUser(doc.id, user) });
       }
       return res.status(401).json({ error: 'Email atau password salah.' });
