@@ -1,4 +1,4 @@
-const express = require('express');
+ï»¿const express = require('express');
 const { db } = require('../config/firebase');
 const { authRequired } = require('../middleware/auth');
 const { publishPostNow } = require('../services/postService');
@@ -42,7 +42,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/posts — create (draft | scheduled)
+// POST /api/posts â€” create (draft | scheduled)
 router.post('/', async (req, res) => {
   try {
     const { title, content, media = [], targets = [], scheduled_at, post_type = 'feed' } = req.body || {};
@@ -55,7 +55,7 @@ router.post('/', async (req, res) => {
       const d = new Date(scheduled_at);
       if (isNaN(d.getTime())) return res.status(400).json({ error: 'Format scheduled_at tidak valid.' });
       if (d.getTime() <= Date.now()) return res.status(400).json({ error: 'Waktu jadwal harus di masa depan.' });
-      scheduledAt = d.toISOString().slice(0, 19).replace('T', ' ');
+      scheduledAt = d.toISOString();
     }
 
     const status = scheduledAt ? 'scheduled' : 'draft';
@@ -120,7 +120,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/posts/:id — update konten, media, jadwal
+// PUT /api/posts/:id â€” update konten, media, jadwal
 router.put('/:id', async (req, res) => {
   try {
     const docRef = db.collection('posts').doc(req.params.id);
@@ -140,7 +140,7 @@ router.put('/:id', async (req, res) => {
     if (scheduled_at !== undefined) {
       const d = new Date(scheduled_at);
       if (isNaN(d.getTime())) return res.status(400).json({ error: 'Format scheduled_at tidak valid.' });
-      scheduledAt = d.toISOString().slice(0, 19).replace('T', ' ');
+      scheduledAt = d.toISOString();
     }
 
     const updateData = {
@@ -192,7 +192,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// POST /api/posts/:id/publish — publish sekarang / retry
+// POST /api/posts/:id/publish â€” publish sekarang / retry
 router.post('/:id/publish', async (req, res) => {
   try {
     const docRef = db.collection('posts').doc(req.params.id);

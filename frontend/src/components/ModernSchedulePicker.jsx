@@ -39,7 +39,7 @@ export default function ModernSchedulePicker({ value, onChange }) {
 
   const updateDate = (newDate) => {
     setSelectedDate(newDate);
-    onChange(toLocalISOString(newDate));
+    onChange(newDate.toISOString());
   };
 
   // Presets
