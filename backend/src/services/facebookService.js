@@ -15,6 +15,8 @@ const FormData = require('form-data');
 async function uploadMedia(pageId, accessToken, mediaUrl, isVideo = false) {
   const endpoint = isVideo ? 'videos' : 'photos';
 
+  if (!mediaUrl) throw new Error('URL media tidak boleh kosong.');
+
   if (mediaUrl.startsWith('/uploads/') || mediaUrl.startsWith('uploads/')) {
     const cleanPath = mediaUrl.startsWith('/') ? mediaUrl.slice(1) : mediaUrl;
     const filePath = path.resolve(__dirname, '..', '..', 'storage', cleanPath);
@@ -70,6 +72,7 @@ async function createPost(pageId, accessToken, message, mediaIds = []) {
  * @returns {Promise<{postId:string}>}
  */
 async function postReelToFacebook(account, content, mediaUrl) {
+  if (!mediaUrl) throw new Error('URL video untuk Reel tidak boleh kosong.');
   const pageId = account.page_id;
   const token = account.access_token;
 
@@ -156,9 +159,12 @@ async function postReelToFacebook(account, content, mediaUrl) {
  * @returns {Promise<{postId:string}>}
  */
 async function postToFacebook(account, content, media = [], postType = 'feed') {
+  // Pastikan media adalah array
+  if (!Array.isArray(media)) media = [];
+
   // Pastikan media beneran video (bukan foto .png/.jpg yang salah pilih tipe)
   const videoMedia = media.find((m) => {
-    if (m.media_type !== 'video') return false;
+    if (!m || m.media_type !== 'video') return false;
     const url = (m.media_url || '').toLowerCase();
     return !/\.(jpg|jpeg|png|gif|webp)$/i.test(url);
   });
@@ -205,6 +211,7 @@ async function postToFacebook(account, content, media = [], postType = 'feed') {
   // Foto / Teks biasa
   const mediaIds = [];
   for (const m of media) {
+    if (!m || !m.media_url) continue; // skip media tanpa URL
     const id = await uploadMedia(account.page_id, account.access_token, m.media_url, false);
     mediaIds.push(id);
   }
