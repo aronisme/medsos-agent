@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import PostPreview from './PostPreview';
 import AiGeneratorModal from './AiGeneratorModal';
+import ModernSchedulePicker from './ModernSchedulePicker';
 import {
   PenTool,
   Upload,
@@ -459,18 +460,10 @@ export default function PostComposer({ onPostCreated }) {
               </div>
 
               {publishMode === 'scheduled' && (
-                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Pilih Waktu Publish (Tanggal & Jam)
-                  </label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={scheduledAt}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+                <ModernSchedulePicker
+                  value={scheduledAt}
+                  onChange={(val) => setScheduledAt(val)}
+                />
               )}
 
               {/* Main Submit Button */}
