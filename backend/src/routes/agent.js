@@ -11,11 +11,82 @@ const router = express.Router();
 
 router.use(authRequired);
 
+// Helper function to sanitize parameters for logging (prevents storing massive base64 in Firestore)
+function sanitizeParams(params) {
+  if (!params || typeof params !== 'object') return params;
+  const sanitized = { ...params };
+  if (sanitized.file_base64) {
+    sanitized.file_base64 = `[BASE64_DATA: ${sanitized.file_base64.length} chars]`;
+  }
+  return sanitized;
+}
+
+// Helper function to record agent activity log
+async function logAgentActivity({ uid, action, params, status, result, error, req }) {
+  try {
+    const ip = req?.headers?.['x-forwarded-for'] || req?.socket?.remoteAddress || 'unknown';
+    const userAgent = req?.headers?.['user-agent'] || 'unknown';
+    
+    const logData = {
+      user_id: uid,
+      action: action || 'unknown',
+      params: sanitizeParams(params),
+      status: status || 'success', // 'success' | 'failed'
+      result: result || null,
+      error: error || null,
+      ip: String(ip).split(',')[0].trim(),
+      user_agent: userAgent,
+      created_at: new Date().toISOString()
+    };
+
+    await db.collection('agent_logs').add(logData);
+  } catch (err) {
+    console.error('[logAgentActivity Error]:', err.message);
+  }
+}
+
+// GET /api/agent/logs - Fetch recent agent API call history
+router.get('/logs', async (req, res) => {
+  try {
+    const uid = req.user.id;
+    const { limit = 50, action, status } = req.query;
+    
+    let query = db.collection('agent_logs')
+      .where('user_id', '==', uid);
+
+    if (action) {
+      query = query.where('action', '==', action);
+    }
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+
+    query = query.orderBy('created_at', 'desc').limit(parseInt(limit, 10) || 50);
+
+    const snapshot = await query.get();
+    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    res.json({ success: true, logs });
+  } catch (err) {
+    console.error('[GET /agent/logs Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agent/execute - Unified execute endpoint
 router.post('/execute', async (req, res) => {
   const { action, params = {} } = req.body || {};
   const uid = req.user.id;
 
   if (!action) {
+    await logAgentActivity({
+      uid,
+      action: 'unknown',
+      params,
+      status: 'failed',
+      error: 'Field "action" wajib diisi.',
+      req
+    });
     return res.status(400).json({ error: 'Field "action" wajib diisi.' });
   }
 
@@ -30,6 +101,16 @@ router.post('/execute', async (req, res) => {
           const { access_token, ...rest } = doc.data();
           return { id: doc.id, ...rest, has_token: Boolean(access_token) };
         });
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { count: accounts.length, accounts: accounts.map(a => ({ id: a.id, name: a.page_name, platform: a.platform })) },
+          req
+        });
+
         return res.json({ success: true, data: accounts });
       }
 
@@ -41,20 +122,58 @@ router.post('/execute', async (req, res) => {
         
         const snapshot = await query.get();
         const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { count: posts.length },
+          req
+        });
+
         return res.json({ success: true, data: posts });
       }
 
       case 'create_post': {
         const { title, content, media = [], targets = [], scheduled_at, post_type = 'feed' } = params;
         if (!content || !String(content).trim()) {
+          await logAgentActivity({
+            uid,
+            action,
+            params,
+            status: 'failed',
+            error: 'Konten postingan wajib diisi.',
+            req
+          });
           return res.status(400).json({ error: 'Konten postingan wajib diisi.' });
         }
 
         let scheduledAt = null;
         if (scheduled_at) {
           const d = new Date(scheduled_at);
-          if (isNaN(d.getTime())) return res.status(400).json({ error: 'Format scheduled_at tidak valid.' });
-          if (d.getTime() <= Date.now()) return res.status(400).json({ error: 'Waktu jadwal harus di masa depan.' });
+          if (isNaN(d.getTime())) {
+            await logAgentActivity({
+              uid,
+              action,
+              params,
+              status: 'failed',
+              error: 'Format scheduled_at tidak valid.',
+              req
+            });
+            return res.status(400).json({ error: 'Format scheduled_at tidak valid.' });
+          }
+          if (d.getTime() <= Date.now()) {
+            await logAgentActivity({
+              uid,
+              action,
+              params,
+              status: 'failed',
+              error: 'Waktu jadwal harus di masa depan.',
+              req
+            });
+            return res.status(400).json({ error: 'Waktu jadwal harus di masa depan.' });
+          }
           scheduledAt = d.toISOString();
         }
 
@@ -101,11 +220,21 @@ router.post('/execute', async (req, res) => {
         };
 
         const docRef = await db.collection('posts').add(newPost);
-        await db.collection('logs').add({
-          user_id: uid,
-          action: 'agent_create_post',
-          details: JSON.stringify({ postId: docRef.id, status }),
-          created_at: new Date().toISOString()
+        
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: {
+            postId: docRef.id,
+            title: newPost.title,
+            post_status: status,
+            scheduled_at: scheduledAt,
+            target_count: formattedTargets.length,
+            media_count: formattedMedia.length
+          },
+          req
         });
 
         return res.json({ success: true, data: { id: docRef.id, ...newPost } });
@@ -113,16 +242,21 @@ router.post('/execute', async (req, res) => {
 
       case 'update_post': {
         const { post_id, title, content, media, scheduled_at, targets } = params;
-        if (!post_id) return res.status(400).json({ error: 'post_id wajib diisi.' });
+        if (!post_id) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'post_id wajib diisi.', req });
+          return res.status(400).json({ error: 'post_id wajib diisi.' });
+        }
 
         const docRef = db.collection('posts').doc(post_id);
         const doc = await docRef.get();
         if (!doc.exists || doc.data().user_id !== uid) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'Postingan tidak ditemukan.', req });
           return res.status(404).json({ error: 'Postingan tidak ditemukan.' });
         }
 
         const post = doc.data();
         if (post.status === 'posted') {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'Postingan sudah terpublish, tidak bisa diedit.', req });
           return res.status(400).json({ error: 'Postingan sudah terpublish, tidak bisa diedit.' });
         }
 
@@ -180,16 +314,30 @@ router.post('/execute', async (req, res) => {
         }
 
         await docRef.update(updateData);
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { postId: doc.id, updatedFields: Object.keys(updateData) },
+          req
+        });
+
         return res.json({ success: true, data: { id: doc.id, ...post, ...updateData } });
       }
 
       case 'publish_post': {
         const { post_id } = params;
-        if (!post_id) return res.status(400).json({ error: 'post_id wajib diisi.' });
+        if (!post_id) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'post_id wajib diisi.', req });
+          return res.status(400).json({ error: 'post_id wajib diisi.' });
+        }
 
         const docRef = db.collection('posts').doc(post_id);
         const doc = await docRef.get();
         if (!doc.exists || doc.data().user_id !== uid) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'Postingan tidak ditemukan.', req });
           return res.status(404).json({ error: 'Postingan tidak ditemukan.' });
         }
 
@@ -206,30 +354,54 @@ router.post('/execute', async (req, res) => {
         if (targetsUpdated) await docRef.update({ targets: newTargets });
 
         const results = await publishPostNow(doc.id);
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { postId: doc.id, publishResults: results },
+          req
+        });
+
         return res.json({ success: true, data: results });
       }
 
       case 'delete_post': {
         const { post_id } = params;
-        if (!post_id) return res.status(400).json({ error: 'post_id wajib diisi.' });
+        if (!post_id) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'post_id wajib diisi.', req });
+          return res.status(400).json({ error: 'post_id wajib diisi.' });
+        }
 
         const docRef = db.collection('posts').doc(post_id);
         const doc = await docRef.get();
         if (!doc.exists || doc.data().user_id !== uid) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'Postingan tidak ditemukan.', req });
           return res.status(404).json({ error: 'Postingan tidak ditemukan.' });
         }
 
         await docRef.delete();
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { postId: post_id, deleted: true },
+          req
+        });
+
         return res.json({ success: true });
       }
 
       case 'upload_media': {
         const { file_base64, file_name, mime_type } = params;
         if (!file_base64 || !file_name) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'file_base64 dan file_name wajib diisi.', req });
           return res.status(400).json({ error: 'file_base64 dan file_name wajib diisi.' });
         }
 
-        // Clean up base64 string if it contains data uri prefix
         let base64Data = file_base64;
         if (base64Data.includes('base64,')) {
           base64Data = base64Data.split('base64,')[1];
@@ -248,13 +420,21 @@ router.post('/execute', async (req, res) => {
         fs.writeFileSync(filePath, base64Data, 'base64');
         const url = `${env.baseUrl}/uploads/${finalFileName}`;
 
-        return res.json({ 
-          success: true, 
-          data: { 
-            url, 
-            type: mime_type?.includes('video') ? 'video' : 'image' 
-          } 
+        const uploadResult = { 
+          url, 
+          type: mime_type?.includes('video') ? 'video' : 'image' 
+        };
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { fileName: finalFileName, url, type: uploadResult.type },
+          req
         });
+
+        return res.json({ success: true, data: uploadResult });
       }
 
       case 'get_templates': {
@@ -263,12 +443,23 @@ router.post('/execute', async (req, res) => {
           .orderBy('created_at', 'desc')
           .get();
         const templates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { count: templates.length },
+          req
+        });
+
         return res.json({ success: true, data: templates });
       }
 
       case 'generate_caption': {
         const { topic, tone, platform, length } = params;
         if (!topic || !String(topic).trim()) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'topic wajib diisi.', req });
           return res.status(400).json({ error: 'topic wajib diisi.' });
         }
         
@@ -276,9 +467,20 @@ router.post('/execute', async (req, res) => {
           const caption = await generateCaption({ topic: String(topic), tone, platform, length });
           const cleanTopic = String(topic).trim();
           const title = cleanTopic.length > 40 ? cleanTopic.slice(0, 40) + '...' : cleanTopic;
+
+          await logAgentActivity({
+            uid,
+            action,
+            params,
+            status: 'success',
+            result: { title, captionPreview: caption.slice(0, 80) + '...' },
+            req
+          });
+
           return res.json({ success: true, data: { caption, title } });
         } catch (e) {
           const message = e?.response?.data?.message || e.message;
+          await logAgentActivity({ uid, action, params, status: 'failed', error: message, req });
           return res.status(500).json({ error: `Gagal generate caption: ${message}` });
         }
       }
@@ -294,14 +496,51 @@ router.post('/execute', async (req, res) => {
           if (summary[p.status] !== undefined) summary[p.status]++;
         });
 
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'success',
+          result: { summary },
+          req
+        });
+
         return res.json({ success: true, data: { summary } });
       }
 
+      case 'get_agent_logs': {
+        const { limit = 50, filter_status } = params;
+        let query = db.collection('agent_logs').where('user_id', '==', uid);
+        if (filter_status) query = query.where('status', '==', filter_status);
+        query = query.orderBy('created_at', 'desc').limit(parseInt(limit, 10) || 50);
+
+        const snapshot = await query.get();
+        const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        return res.json({ success: true, data: logs });
+      }
+
       default:
+        await logAgentActivity({
+          uid,
+          action,
+          params,
+          status: 'failed',
+          error: `Action '${action}' tidak dikenali.`,
+          req
+        });
         return res.status(400).json({ error: `Action '${action}' tidak dikenali.` });
     }
   } catch (err) {
     console.error(`[Agent Action Error] ${action}:`, err.message);
+    await logAgentActivity({
+      uid,
+      action,
+      params,
+      status: 'failed',
+      error: err.message,
+      req
+    });
     res.status(500).json({ error: err.message });
   }
 });
