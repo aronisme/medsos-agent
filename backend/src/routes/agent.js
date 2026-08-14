@@ -61,10 +61,12 @@ router.get('/logs', async (req, res) => {
       query = query.where('status', '==', status);
     }
 
-    query = query.orderBy('created_at', 'desc').limit(parseInt(limit, 10) || 50);
-
     const snapshot = await query.get();
-    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Sort in-memory by created_at desc to avoid requiring composite indexes
+    logs.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    logs = logs.slice(0, parseInt(limit, 10) || 50);
 
     res.json({ success: true, logs });
   } catch (err) {
@@ -512,10 +514,11 @@ router.post('/execute', async (req, res) => {
         const { limit = 50, filter_status } = params;
         let query = db.collection('agent_logs').where('user_id', '==', uid);
         if (filter_status) query = query.where('status', '==', filter_status);
-        query = query.orderBy('created_at', 'desc').limit(parseInt(limit, 10) || 50);
 
         const snapshot = await query.get();
-        const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        logs.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        logs = logs.slice(0, parseInt(limit, 10) || 50);
 
         return res.json({ success: true, data: logs });
       }
