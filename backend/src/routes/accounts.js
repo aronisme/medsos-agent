@@ -31,11 +31,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/accounts — manual add
+// POST /api/accounts ï¿½ manual add
 router.post('/', async (req, res) => {
   const { platform, page_id, page_name, access_token } = req.body || {};
-  if (!['facebook', 'instagram'].includes(platform)) {
-    return res.status(400).json({ error: 'platform harus facebook atau instagram.' });
+  if (!['facebook', 'instagram', 'threads'].includes(platform)) {
+    return res.status(400).json({ error: 'platform harus facebook, instagram, atau threads.' });
   }
   if (!page_id) return res.status(400).json({ error: 'page_id wajib diisi.' });
 
@@ -58,7 +58,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/accounts/:id — update token/aktif
+// PUT /api/accounts/:id ï¿½ update token/aktif
 router.put('/:id', async (req, res) => {
   try {
     const docRef = db.collection('social_accounts').doc(req.params.id);

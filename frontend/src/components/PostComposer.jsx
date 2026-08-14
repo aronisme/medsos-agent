@@ -19,6 +19,7 @@ import {
   Link as LinkIcon,
   Film,
   X,
+  AtSign,
 } from 'lucide-react';
 
 export default function PostComposer({ onPostCreated }) {
@@ -102,6 +103,16 @@ export default function PostComposer({ onPostCreated }) {
     }
     if (selectedTargets.length === 0 && publishMode !== 'draft') {
       setMessage({ type: 'error', text: 'Pilih minimal satu akun sosmed target postingan.' });
+      return;
+    }
+
+    const hasIgTarget = selectedTargets.some(id => {
+      const acc = accounts.find(a => a.id === id);
+      return acc && acc.platform === 'instagram';
+    });
+
+    if (hasIgTarget && !mediaUrl && publishMode !== 'draft') {
+      setMessage({ type: 'error', text: 'Postingan ke Instagram WAJIB menyertakan media (Foto atau Video).' });
       return;
     }
 
@@ -375,29 +386,42 @@ export default function PostComposer({ onPostCreated }) {
                   {accounts.map((acc) => {
                     const isSelected = selectedTargets.includes(acc.id);
                     const isFb = acc.platform === 'facebook';
+                    const isIg = acc.platform === 'instagram';
+                    const isThreads = acc.platform === 'threads';
+                    
+                    let bgClass = 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700';
+                    let iconBgClass = 'bg-slate-800';
+                    let IconComponent = Share2;
+                    
+                    if (isFb) {
+                      IconComponent = Facebook;
+                      iconBgClass = 'bg-fb-blue';
+                      if (isSelected) bgClass = 'bg-fb-blue/10 border-fb-blue text-white';
+                    } else if (isIg) {
+                      IconComponent = Instagram;
+                      iconBgClass = 'bg-gradient-to-tr from-ig-orange via-ig-pink to-ig-purple';
+                      if (isSelected) bgClass = 'bg-ig-pink/10 border-ig-pink text-white';
+                    } else if (isThreads) {
+                      IconComponent = AtSign;
+                      iconBgClass = 'bg-black border border-slate-700';
+                      if (isSelected) bgClass = 'bg-slate-800/80 border-slate-500 text-white';
+                    }
+                    
                     return (
                       <div
                         key={acc.id}
                         onClick={() => handleToggleTarget(acc.id)}
-                        className={`cursor-pointer p-3 rounded-xl border flex items-center gap-3 transition-all ${
-                          isSelected
-                            ? isFb
-                              ? 'bg-fb-blue/10 border-fb-blue text-white'
-                              : 'bg-ig-pink/10 border-ig-pink text-white'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
-                        }`}
+                        className={`cursor-pointer p-3 rounded-xl border flex items-center gap-3 transition-all ${bgClass}`}
                       >
                         <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 font-bold text-xs ${
-                            isFb ? 'bg-fb-blue' : 'bg-gradient-to-tr from-ig-orange via-ig-pink to-ig-purple'
-                          }`}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 font-bold text-xs ${iconBgClass}`}
                         >
-                          {isFb ? <Facebook className="w-4 h-4" /> : <Instagram className="w-4 h-4" />}
+                          <IconComponent className="w-4 h-4" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold text-white truncate">{acc.page_name}</p>
                           <span className="text-[10px] text-slate-400 uppercase font-semibold">
-                            {acc.platform} Page
+                            {acc.platform}
                           </span>
                         </div>
                         <input

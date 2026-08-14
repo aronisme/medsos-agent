@@ -8,6 +8,7 @@ import PostComposer from './components/PostComposer';
 import PostList from './components/PostList';
 import AccountManager from './components/AccountManager';
 import TemplateManager from './components/TemplateManager';
+import ApiDocumentation from './components/ApiDocumentation';
 import api from './api/client';
 
 export default function App() {
@@ -66,6 +67,7 @@ export default function App() {
               }}
             />
           )}
+          {activeTab === 'api_docs' && <ApiDocumentation />}
         </main>
       </div>
     </div>

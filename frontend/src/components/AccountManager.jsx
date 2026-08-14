@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   RefreshCw,
   X,
+  AtSign,
 } from 'lucide-react';
 
 export default function AccountManager() {
@@ -136,6 +137,22 @@ export default function AccountManager() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {accounts.map((acc) => {
             const isFb = acc.platform === 'facebook';
+            const isIg = acc.platform === 'instagram';
+            const isThreads = acc.platform === 'threads';
+            
+            let bgClass = 'bg-slate-800 shadow-lg';
+            let IconComponent = Share2;
+            if (isFb) {
+              bgClass = 'bg-fb-blue shadow-lg shadow-blue-500/20';
+              IconComponent = Facebook;
+            } else if (isIg) {
+              bgClass = 'bg-gradient-to-tr from-ig-orange via-ig-pink to-ig-purple shadow-lg shadow-pink-500/20';
+              IconComponent = Instagram;
+            } else if (isThreads) {
+              bgClass = 'bg-black border border-slate-700 shadow-lg shadow-slate-500/20';
+              IconComponent = AtSign;
+            }
+            
             return (
               <div
                 key={acc.id}
@@ -144,13 +161,9 @@ export default function AccountManager() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-bold ${
-                        isFb
-                          ? 'bg-fb-blue shadow-lg shadow-blue-500/20'
-                          : 'bg-gradient-to-tr from-ig-orange via-ig-pink to-ig-purple shadow-lg shadow-pink-500/20'
-                      }`}
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-bold ${bgClass}`}
                     >
-                      {isFb ? <Facebook className="w-5 h-5" /> : <Instagram className="w-5 h-5" />}
+                      <IconComponent className="w-5 h-5" />
                     </div>
 
                     <button
@@ -214,7 +227,7 @@ export default function AccountManager() {
             <form onSubmit={handleAddAccount} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Platform</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setPlatform('facebook')}
@@ -224,7 +237,7 @@ export default function AccountManager() {
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
-                    <Facebook className="w-4 h-4" /> Facebook Page
+                    <Facebook className="w-4 h-4" /> Facebook
                   </button>
                   <button
                     type="button"
@@ -235,7 +248,18 @@ export default function AccountManager() {
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
-                    <Instagram className="w-4 h-4" /> Instagram Business
+                    <Instagram className="w-4 h-4" /> Instagram
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlatform('threads')}
+                    className={`py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 ${
+                      platform === 'threads'
+                        ? 'bg-black text-white border-slate-700 shadow-lg shadow-slate-500/20'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    <AtSign className="w-4 h-4" /> Threads
                   </button>
                 </div>
               </div>
@@ -247,19 +271,21 @@ export default function AccountManager() {
                   required
                   value={pageName}
                   onChange={(e) => setPageName(e.target.value)}
-                  placeholder="Contoh: Toko Online Resmi FB"
+                  placeholder="Contoh: Toko Online Resmi"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">FB Page ID *</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  {platform === 'threads' ? 'Threads User ID *' : 'FB Page / IG Business ID *'}
+                </label>
                 <input
                   type="text"
                   required
                   value={pageId}
                   onChange={(e) => setPageId(e.target.value)}
-                  placeholder="Contoh: 10982347120938"
+                  placeholder={platform === 'threads' ? 'Contoh: 123456789' : 'Contoh: 10982347120938'}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>

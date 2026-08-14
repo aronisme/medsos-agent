@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.use(authRequired);
 
-// GET /api/stats — statistik dashboard
+// GET /api/stats ï¿½ statistik dashboard
 router.get('/', async (req, res) => {
   try {
     const uid = req.user.id;
@@ -49,6 +49,7 @@ router.get('/', async (req, res) => {
       }
     });
 
+
     const byPlatform = Object.values(platformStats);
 
     const logsSnap = await db.collection('logs')
@@ -59,8 +60,20 @@ router.get('/', async (req, res) => {
       
     const recentLogs = logsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    res.json({ summary, byPlatform, recent, recentLogs });
+    const accSnap = await db.collection('social_accounts')
+      .where('user_id', '==', uid)
+      .where('is_active', '==', true)
+      .get();
+
+    res.json({ 
+      summary, 
+      byPlatform, 
+      recent, 
+      recentLogs,
+      activeAccounts: accSnap.size
+    });
   } catch (err) {
+
     res.status(500).json({ error: err.message });
   }
 });

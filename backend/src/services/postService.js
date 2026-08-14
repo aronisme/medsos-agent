@@ -2,6 +2,7 @@ const { db } = require('../config/firebase');
 const env = require('../config/env');
 const { postToFacebook } = require('./facebookService');
 const { postToInstagram } = require('./instagramService');
+const { postToThreads } = require('./threadsService');
 
 async function addLog(userId, action, details) {
   await db.collection('logs').add({
@@ -34,6 +35,8 @@ async function publishTarget(post, target, account) {
       result = await postToFacebook(account, post.content, post.media, post.post_type || 'feed');
     } else if (target.platform === 'instagram') {
       result = await postToInstagram(account, post.content, post.media);
+    } else if (target.platform === 'threads') {
+      result = await postToThreads(account, post.content, post.media);
     } else {
       throw new Error(`Platform tidak dikenal: ${target.platform}`);
     }

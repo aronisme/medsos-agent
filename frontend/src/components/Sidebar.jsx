@@ -6,6 +6,7 @@ import {
   Share2,
   FileText,
   Sparkles,
+  Terminal,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
@@ -15,6 +16,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { id: 'posts', label: 'Kelola & Jadwal', icon: Calendar },
     { id: 'accounts', label: 'Akun Sosmed', icon: Share2 },
     { id: 'templates', label: 'Template Caption', icon: FileText },
+    { id: 'api_docs', label: 'API Agent', icon: Terminal },
   ];
 
   return (

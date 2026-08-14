@@ -31,34 +31,37 @@ export default function StatsOverview({ setActiveTab }) {
     fetchStats();
   }, []);
 
+  const summary = stats?.summary || {};
+  const totalPosts = (summary.draft || 0) + (summary.scheduled || 0) + (summary.posted || 0) + (summary.failed || 0);
+
   const cards = [
     {
       title: 'Total Postingan',
-      value: stats?.totalPosts ?? 0,
+      value: totalPosts,
       icon: Calendar,
       color: 'from-blue-500/20 to-indigo-500/10 border-blue-500/30 text-blue-400',
     },
     {
       title: 'Terjadwal',
-      value: stats?.scheduledPosts ?? 0,
+      value: summary.scheduled || 0,
       icon: Clock,
       color: 'from-amber-500/20 to-orange-500/10 border-amber-500/30 text-amber-400',
     },
     {
       title: 'Berhasil Terpublish',
-      value: stats?.postedPosts ?? 0,
+      value: summary.posted || 0,
       icon: CheckCircle2,
       color: 'from-emerald-500/20 to-teal-500/10 border-emerald-500/30 text-emerald-400',
     },
     {
       title: 'Gagal Publish',
-      value: stats?.failedPosts ?? 0,
+      value: summary.failed || 0,
       icon: AlertTriangle,
       color: 'from-rose-500/20 to-pink-500/10 border-rose-500/30 text-rose-400',
     },
     {
       title: 'Akun Sosmed Aktif',
-      value: stats?.activeAccounts ?? 0,
+      value: stats?.activeAccounts || 'N/A',
       icon: Share2,
       color: 'from-purple-500/20 to-indigo-500/10 border-purple-500/30 text-purple-400',
     },

@@ -14,6 +14,7 @@ import {
   Facebook,
   Instagram,
   Layers,
+  AtSign,
 } from 'lucide-react';
 
 export default function PostList() {
@@ -277,8 +278,10 @@ export default function PostList() {
                         <div className="flex items-center gap-2">
                           {t.platform === 'facebook' ? (
                             <Facebook className="w-4 h-4 text-fb-blue" />
-                          ) : (
+                          ) : t.platform === 'instagram' ? (
                             <Instagram className="w-4 h-4 text-ig-pink" />
+                          ) : (
+                            <AtSign className="w-4 h-4 text-slate-300" />
                           )}
                           <span className="font-semibold text-white">{t.page_name || t.platform}</span>
                         </div>
