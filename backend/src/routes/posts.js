@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const { db } = require('../config/firebase');
 const { authRequired } = require('../middleware/auth');
 const { publishPostNow } = require('../services/postService');
@@ -16,11 +16,12 @@ router.get('/', async (req, res) => {
       query = query.where('status', '==', status);
     }
     
-    // Sort and limit
-    query = query.orderBy('created_at', 'desc').limit(parseInt(limit, 10) || 50);
-    
     const snapshot = await query.get();
-    const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    posts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+    const parsedLimit = parseInt(limit, 10) || 50;
+    posts = posts.slice(0, parsedLimit);
     
     res.json({ posts });
   } catch (err) {
