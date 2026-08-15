@@ -55,9 +55,13 @@ export default function ApiDocumentation() {
   "action": "create_post",
   "params": {
     "title": "Promo Akhir Tahun",
-    "content": "Dapatkan diskon 50% untuk semua item!",
+    "content": "Dapatkan diskon 50% untuk semua item! #Threads #Promo",
     "media": [{"url": "https://example.com/image.jpg", "type": "image"}],
-    "targets": ["account_id_1", "account_id_2"],
+    "targets": ["account_id_1", "threads_account_id"],
+    "threads_options": {
+      "replyToId": "178414000000000",
+      "quotePostId": "178414999999999"
+    },
     "scheduled_at": "2026-12-31T10:00:00Z"
   }
 }`;

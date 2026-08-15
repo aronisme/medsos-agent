@@ -38,6 +38,10 @@ export default function PostComposer({ onPostCreated }) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
 
+  const [replyToId, setReplyToId] = useState('');
+  const [quotePostId, setQuotePostId] = useState('');
+  const [showThreadsOptions, setShowThreadsOptions] = useState(false);
+
   // Fetch accounts on mount
   useEffect(() => {
     api.get('/accounts')
@@ -112,8 +116,18 @@ export default function PostComposer({ onPostCreated }) {
       return acc && acc.platform === 'instagram';
     });
 
+    const hasThreadsTarget = selectedTargets.some(id => {
+      const acc = accounts.find(a => a.id === id);
+      return acc && acc.platform === 'threads';
+    });
+
     if (hasIgTarget && !mediaUrl && publishMode !== 'draft') {
       setMessage({ type: 'error', text: 'Postingan ke Instagram WAJIB menyertakan media (Foto atau Video).' });
+      return;
+    }
+
+    if (hasThreadsTarget && content.length > 500 && publishMode !== 'draft') {
+      setMessage({ type: 'error', text: 'Meta Threads API membatasi caption maksimal 500 karakter.' });
       return;
     }
 
@@ -128,6 +142,10 @@ export default function PostComposer({ onPostCreated }) {
         targets: selectedTargets,
         scheduled_at: publishMode === 'scheduled' ? scheduledAt : null,
         post_type: postType,
+        threads_options: {
+          replyToId: replyToId.trim() || undefined,
+          quotePostId: quotePostId.trim() || undefined,
+        },
       };
 
       // 1. Create post
@@ -256,8 +274,70 @@ export default function PostComposer({ onPostCreated }) {
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="Tulis caption postingan Anda di sini..."
-                className="w-full p-4 bg-slate-950/70 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"
+                className={`w-full p-4 bg-slate-950/70 border rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none leading-relaxed ${
+                  content.length > 500 && selectedTargets.some(id => accounts.find(a => a.id === id)?.platform === 'threads')
+                    ? 'border-rose-500/80 focus:border-rose-500'
+                    : 'border-slate-800 focus:border-indigo-500'
+                }`}
               />
+              <div className="flex items-center justify-between mt-1 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1">
+                  <AtSign className="w-3 h-3 text-slate-400" />
+                  Maksimal 500 Karakter (Meta Threads API)
+                </span>
+                <span className={`font-mono font-bold ${
+                  content.length > 500 ? 'text-rose-400' : 'text-slate-400'
+                }`}>
+                  {content.length}/500
+                </span>
+              </div>
+            </div>
+
+            {/* Threads Advanced Settings Accordion */}
+            <div className="p-4 bg-slate-950/60 border border-slate-800/90 rounded-2xl space-y-3">
+              <button
+                type="button"
+                onClick={() => setShowThreadsOptions(!showThreadsOptions)}
+                className="w-full flex items-center justify-between text-xs font-bold text-slate-300 hover:text-white transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <AtSign className="w-4 h-4 text-indigo-400" />
+                  <span>Pengaturan Lanjutan Threads (Reply / Quote)</span>
+                </div>
+                <span className="text-[10px] text-indigo-400 font-normal">
+                  {showThreadsOptions ? 'Sembunyikan ▲' : 'Tampilkan Opsi ▼'}
+                </span>
+              </button>
+
+              {showThreadsOptions && (
+                <div className="pt-2 border-t border-slate-800 space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      Reply To Post ID (Opsional - Untuk Balasan / Thread Sequence)
+                    </label>
+                    <input
+                      type="text"
+                      value={replyToId}
+                      onChange={(e) => setReplyToId(e.target.value)}
+                      placeholder="Contoh ID Post Threads: 178414000000000"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                      Quote Post ID (Opsional - Untuk Mengutip Postingan Lain)
+                    </label>
+                    <input
+                      type="text"
+                      value={quotePostId}
+                      onChange={(e) => setQuotePostId(e.target.value)}
+                      placeholder="Contoh ID Post Threads: 178414999999999"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Media Upload / URL */}
@@ -529,6 +609,8 @@ export default function PostComposer({ onPostCreated }) {
               mediaUrl={mediaUrl}
               mediaType={mediaType}
               selectedAccounts={accounts.filter((a) => selectedTargets.includes(a.id))}
+              replyToId={replyToId}
+              quotePostId={quotePostId}
             />
           </div>
         </div>

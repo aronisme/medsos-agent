@@ -74,13 +74,13 @@ export default function StatsOverview({ setActiveTab }) {
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 text-xs font-semibold border border-indigo-500/30 mb-3">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>FB & IG Automation Dashboard</span>
+            <span>FB, IG & Threads Automation Dashboard</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Kelola & Jadwalkan Konten Media Sosial Anda
           </h2>
           <p className="text-slate-300 text-sm mt-2 leading-relaxed">
-            Otomatiskan postingan ke Halaman Facebook dan Akun Instagram Bisnis Anda. Lengkap dengan bantuan Mistral AI untuk pembuatan caption & hashtag cepat.
+            Otomatiskan postingan ke Halaman Facebook, Akun Instagram Bisnis, dan Meta Threads. Lengkap dengan dukungan Carousel, Reply Thread, dan bantuan Mistral AI.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-6">
             <button

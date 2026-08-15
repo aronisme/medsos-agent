@@ -36,7 +36,7 @@ async function publishTarget(post, target, account) {
     } else if (target.platform === 'instagram') {
       result = await postToInstagram(account, post.content, post.media);
     } else if (target.platform === 'threads') {
-      result = await postToThreads(account, post.content, post.media);
+      result = await postToThreads(account, post.content, post.media, post.threads_options || {});
     } else {
       throw new Error(`Platform tidak dikenal: ${target.platform}`);
     }
