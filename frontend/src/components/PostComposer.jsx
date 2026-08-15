@@ -42,6 +42,9 @@ export default function PostComposer({ onPostCreated }) {
   const [quotePostId, setQuotePostId] = useState('');
   const [showThreadsOptions, setShowThreadsOptions] = useState(false);
 
+  const [mediaList, setMediaList] = useState([]); // [{ url, type }]
+  const [uploadProgress, setUploadProgress] = useState('');
+
   // Fetch accounts on mount
   useEffect(() => {
     api.get('/accounts')
@@ -56,39 +59,72 @@ export default function PostComposer({ onPostCreated }) {
   }, []);
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const isVid = file.type.startsWith('video');
-    const cloudName = isVid ? import.meta.env.VITE_CLOUDINARY_CLOUD_NAME_VIDEO : import.meta.env.VITE_CLOUDINARY_CLOUD_NAME_IMAGE;
-    const uploadPreset = isVid ? import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET_VIDEO : import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET_IMAGE;
-
-    if (!cloudName || !uploadPreset) {
-      setMessage({ type: 'error', text: 'Konfigurasi Cloudinary belum disetting di .env.local' });
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', uploadPreset);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setUploading(true);
     setMessage(null);
-    try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || 'Upload gagal');
 
-      setMediaUrl(data.secure_url);
-      setMediaType(isVid ? 'video' : 'image');
-      if (!isVid) setPostType('feed');
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Gagal mengunggah media file ke Cloudinary.' });
-    } finally {
-      setUploading(false);
+    const newUploaded = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isVid = file.type.startsWith('video');
+      const cloudName = isVid ? import.meta.env.VITE_CLOUDINARY_CLOUD_NAME_VIDEO : import.meta.env.VITE_CLOUDINARY_CLOUD_NAME_IMAGE;
+      const uploadPreset = isVid ? import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET_VIDEO : import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET_IMAGE;
+
+      if (!cloudName || !uploadPreset) {
+        setMessage({ type: 'error', text: 'Konfigurasi Cloudinary belum disetting di .env.local' });
+        setUploading(false);
+        return;
+      }
+
+      setUploadProgress(`Mengunggah file ${i + 1} dari ${files.length}...`);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', uploadPreset);
+
+      try {
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || 'Upload gagal');
+
+        const item = { url: data.secure_url, type: isVid ? 'video' : 'image' };
+        newUploaded.push(item);
+      } catch (err) {
+        setMessage({ type: 'error', text: `Gagal mengunggah ${file.name} ke Cloudinary.` });
+      }
+    }
+
+    if (newUploaded.length > 0) {
+      setMediaList((prev) => [...prev, ...newUploaded]);
+      if (!mediaUrl) {
+        setMediaUrl(newUploaded[0].url);
+        setMediaType(newUploaded[0].type);
+      }
+    }
+
+    setUploading(false);
+    setUploadProgress('');
+  };
+
+  const handleAddUrlMedia = () => {
+    if (!mediaUrl.trim()) return;
+    setMediaList((prev) => [...prev, { url: mediaUrl.trim(), type: mediaType }]);
+  };
+
+  const handleRemoveMediaItem = (index) => {
+    const updated = mediaList.filter((_, idx) => idx !== index);
+    setMediaList(updated);
+    if (updated.length > 0) {
+      setMediaUrl(updated[0].url);
+      setMediaType(updated[0].type);
+    } else {
+      setMediaUrl('');
     }
   };
 
@@ -102,14 +138,25 @@ export default function PostComposer({ onPostCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (uploading) {
+      setMessage({ type: 'error', text: 'Pengunggah media sedang berlangsung. Harap tunggu hingga selesai sebelum mempublish.' });
+      return;
+    }
+
     if (!content.trim()) {
       setMessage({ type: 'error', text: 'Isi postingan (caption) tidak boleh kosong.' });
       return;
     }
+
     if (selectedTargets.length === 0 && publishMode !== 'draft') {
       setMessage({ type: 'error', text: 'Pilih minimal satu akun sosmed target postingan.' });
       return;
     }
+
+    const effectiveMedia = mediaList.length > 0
+      ? mediaList
+      : (mediaUrl ? [{ url: mediaUrl, type: mediaType }] : []);
 
     const hasIgTarget = selectedTargets.some(id => {
       const acc = accounts.find(a => a.id === id);
@@ -121,7 +168,7 @@ export default function PostComposer({ onPostCreated }) {
       return acc && acc.platform === 'threads';
     });
 
-    if (hasIgTarget && !mediaUrl && publishMode !== 'draft') {
+    if (hasIgTarget && effectiveMedia.length === 0 && publishMode !== 'draft') {
       setMessage({ type: 'error', text: 'Postingan ke Instagram WAJIB menyertakan media (Foto atau Video).' });
       return;
     }
@@ -138,7 +185,7 @@ export default function PostComposer({ onPostCreated }) {
       const payload = {
         title,
         content,
-        media: mediaUrl ? [{ url: mediaUrl, type: mediaType }] : [],
+        media: effectiveMedia,
         targets: selectedTargets,
         scheduled_at: publishMode === 'scheduled' ? scheduledAt : null,
         post_type: postType,
@@ -342,83 +389,102 @@ export default function PostComposer({ onPostCreated }) {
 
             {/* Media Upload / URL */}
             <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                Media (Foto / Video)
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Media (Foto / Video)
+                </label>
+                {mediaList.length > 1 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">
+                    Carousel ({mediaList.length} Items)
+                  </span>
+                )}
+              </div>
 
-              {mediaUrl ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                    <div className="w-12 h-12 bg-slate-900 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-slate-800">
-                      {mediaType === 'video' ? (
-                        <video src={mediaUrl} className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={mediaUrl} alt="Upload" className="w-full h-full object-cover" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-slate-200 font-medium truncate">{mediaUrl}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <button
-                          type="button"
-                          onClick={() => setMediaType('image')}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                            mediaType === 'image'
-                              ? 'bg-indigo-600 border-indigo-500 text-white'
-                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-                          }`}
-                        >
-                          📷 Foto
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setMediaType('video')}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                            mediaType === 'video'
-                              ? 'bg-purple-600 border-purple-500 text-white'
-                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-                          }`}
-                        >
-                          🎥 Video
-                        </button>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setMediaUrl('')}
-                      className="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-900"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
+              {/* Uploading Status Overlay Bar */}
+              {uploading && (
+                <div className="p-3 mb-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex items-center gap-3 animate-pulse">
+                  <div className="w-4 h-4 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin shrink-0" />
+                  <span className="text-xs text-indigo-300 font-semibold">{uploadProgress || 'Mengunggah media file ke Cloudinary...'}</span>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-slate-950/70 border border-dashed border-slate-800 hover:border-indigo-500/50 rounded-xl text-xs font-semibold text-slate-400 hover:text-indigo-400 transition-all">
-                      <Upload className="w-4 h-4" />
-                      <span>{uploading ? 'Mengunggah...' : 'Upload Foto / Video File'}</span>
-                      <input
-                        type="file"
-                        accept="image/*,video/*"
-                        onChange={handleFileUpload}
+              )}
+
+              {/* Uploaded Media Items List */}
+              {mediaList.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {mediaList.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-2.5 bg-slate-950 border border-slate-800 rounded-xl">
+                      <div className="w-10 h-10 bg-slate-900 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-slate-800">
+                        {item.type === 'video' ? (
+                          <video src={item.url} className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={item.url} alt={`Upload ${idx}`} className="w-full h-full object-cover" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-200 font-medium truncate">{item.url}</p>
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mt-0.5 uppercase ${
+                          item.type === 'video' ? 'bg-purple-900/60 text-purple-300 border border-purple-700' : 'bg-indigo-900/60 text-indigo-300 border border-indigo-700'
+                        }`}>
+                          {item.type} #{idx + 1}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMediaItem(idx)}
                         disabled={uploading}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                  <div className="relative">
+                        className="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-900 transition-colors"
+                        title="Hapus Media Ini"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload Button / Add URL Section */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <label className={`flex-1 cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-slate-950/70 border border-dashed rounded-xl text-xs font-semibold transition-all ${
+                    uploading
+                      ? 'border-indigo-500/50 text-indigo-400 bg-indigo-500/5 cursor-wait'
+                      : 'border-slate-800 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-400'
+                  }`}>
+                    <Upload className="w-4 h-4" />
+                    <span>{uploading ? uploadProgress || 'Mengunggah...' : mediaList.length > 0 ? '+ Tambah Foto / Video Lain (Carousel)' : 'Upload Foto / Video File'}</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*"
+                      onChange={handleFileUpload}
+                      disabled={uploading}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="relative flex items-center gap-2">
+                  <div className="relative flex-1">
                     <LinkIcon className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
                     <input
                       type="url"
                       value={mediaUrl}
                       onChange={(e) => setMediaUrl(e.target.value)}
-                      placeholder="atau tempel URL Gambar publik (https://...)"
+                      placeholder="atau tempel URL Gambar/Video publik (https://...)"
                       className="w-full pl-9 pr-4 py-2 bg-slate-950/70 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
+                  {mediaUrl && (
+                    <button
+                      type="button"
+                      onClick={handleAddUrlMedia}
+                      className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-colors"
+                    >
+                      + Tambah
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
 
               {mediaUrl && mediaType === 'video' && (
                 <div className="mt-3 p-3 bg-slate-950 border border-indigo-500/30 rounded-xl space-y-2">
@@ -574,11 +640,20 @@ export default function PostComposer({ onPostCreated }) {
               {/* Main Submit Button */}
               <button
                 type="submit"
-                disabled={submitting}
-                className="w-full mt-4 py-3 rounded-2xl gradient-btn font-bold text-sm flex items-center justify-center gap-2 shadow-xl"
+                disabled={submitting || uploading}
+                className={`w-full mt-4 py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-xl transition-all ${
+                  submitting || uploading
+                    ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                    : 'gradient-btn text-white'
+                }`}
               >
-                {submitting ? (
-                  <span>Memproses...</span>
+                {uploading ? (
+                  <div className="flex items-center gap-2 text-amber-300">
+                    <div className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+                    <span>{uploadProgress || 'Mengunggah Media File...'}</span>
+                  </div>
+                ) : submitting ? (
+                  <span>Memproses & Kirim Postingan...</span>
                 ) : publishMode === 'now' ? (
                   <>
                     <Send className="w-4 h-4" />
