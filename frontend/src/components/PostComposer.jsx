@@ -20,6 +20,7 @@ import {
   Film,
   X,
   AtSign,
+  Share2,
 } from 'lucide-react';
 
 export default function PostComposer({ onPostCreated }) {
