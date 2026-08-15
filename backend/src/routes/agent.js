@@ -398,33 +398,45 @@ router.post('/execute', async (req, res) => {
       }
 
       case 'upload_media': {
-        const { file_base64, file_name, mime_type } = params;
-        if (!file_base64 || !file_name) {
-          await logAgentActivity({ uid, action, params, status: 'failed', error: 'file_base64 dan file_name wajib diisi.', req });
-          return res.status(400).json({ error: 'file_base64 dan file_name wajib diisi.' });
+        const { file_base64, file_name = 'upload.jpg', mime_type } = params;
+        if (!file_base64) {
+          await logAgentActivity({ uid, action, params, status: 'failed', error: 'file_base64 wajib diisi.', req });
+          return res.status(400).json({ error: 'file_base64 wajib diisi.' });
         }
 
-        let base64Data = file_base64;
+        let base64Data = String(file_base64).trim();
         if (base64Data.includes('base64,')) {
           base64Data = base64Data.split('base64,')[1];
         }
 
-        const uploadDir = path.join(__dirname, '../../uploads');
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
+        const isVideo = mime_type?.includes('video') || String(file_name).endsWith('.mp4');
+        const cloudName = isVideo ? (process.env.CLOUDINARY_CLOUD_NAME_VIDEO || 'drkbqpxqf') : (process.env.CLOUDINARY_CLOUD_NAME_IMAGE || 'dwgfox722');
+        const uploadPreset = isVideo ? (process.env.CLOUDINARY_UPLOAD_PRESET_VIDEO || 'vidgram') : (process.env.CLOUDINARY_UPLOAD_PRESET_IMAGE || 'lynke_app');
+        const cleanMime = mime_type || (isVideo ? 'video/mp4' : 'image/jpeg');
+
+        const formData = new URLSearchParams();
+        formData.append('file', `data:${cleanMime};base64,${base64Data}`);
+        formData.append('upload_preset', uploadPreset);
+
+        const resourceType = isVideo ? 'video' : 'image';
+        const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const cloudData = await cloudRes.json();
+
+        if (!cloudRes.ok) {
+          const errorMsg = cloudData.error?.message || 'Gagal upload media ke Cloudinary';
+          await logAgentActivity({ uid, action, params, status: 'failed', error: errorMsg, req });
+          return res.status(500).json({ error: errorMsg });
         }
 
-        const ext = path.extname(file_name) || (mime_type?.includes('video') ? '.mp4' : '.jpg');
-        const hash = crypto.randomBytes(8).toString('hex');
-        const finalFileName = `${Date.now()}-${hash}${ext}`;
-        const filePath = path.join(uploadDir, finalFileName);
-
-        fs.writeFileSync(filePath, base64Data, 'base64');
-        const url = `${env.baseUrl}/uploads/${finalFileName}`;
-
         const uploadResult = { 
-          url, 
-          type: mime_type?.includes('video') ? 'video' : 'image' 
+          url: cloudData.secure_url || cloudData.url, 
+          type: resourceType,
+          public_id: cloudData.public_id,
+          format: cloudData.format
         };
 
         await logAgentActivity({
@@ -432,7 +444,7 @@ router.post('/execute', async (req, res) => {
           action,
           params,
           status: 'success',
-          result: { fileName: finalFileName, url, type: uploadResult.type },
+          result: { fileName: file_name, url: uploadResult.url, type: uploadResult.type },
           req
         });
 
