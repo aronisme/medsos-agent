@@ -14,7 +14,8 @@ import {
   Clock,
   Send,
   AlertCircle,
-  FileText
+  FileText,
+  Link
 } from 'lucide-react';
 import api from '../api/client';
 
@@ -163,6 +164,33 @@ export default function ApiDocumentation() {
                 {copiedId === 'payload' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
+          </div>
+
+          {/* Affiliate API Endpoint */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
+              <Link className="w-5 h-5 text-orange-400" /> Shopee Affiliate API
+            </h2>
+            
+            <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800/80 mb-4">
+              <span className="px-2.5 py-1 text-xs font-bold bg-green-500/20 text-green-400 rounded-md">POST</span>
+              <code className="text-sm text-slate-300 flex-1">/api/v1/affiliate/shopee</code>
+            </div>
+
+            <p className="text-sm text-slate-400 mb-4">
+              Endpoint khusus untuk generate link affiliate pendek. Tersedia juga endpoint <code>/batch</code> untuk generate secara masal.
+            </p>
+
+            <h3 className="text-sm font-semibold text-slate-300 mb-2">Contoh Request Body</h3>
+            <pre className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 overflow-x-auto text-sm text-orange-300 font-mono">
+{`{
+  "product_url": "https://shopee.co.id/product/123/456",
+  "tracking": {
+    "source": "tiktok",
+    "campaign": "promo-01"
+  }
+}`}
+            </pre>
           </div>
 
         </div>

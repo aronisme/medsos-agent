@@ -13,6 +13,8 @@ const aiRoutes = require('./routes/ai');
 const statsRoutes = require('./routes/stats');
 const agentRoutes = require('./routes/agent');
 const cronRoutes = require('./routes/cron');
+const affiliateRoutes = require('./routes/affiliate');
+const redirectRoutes = require('./routes/redirect');
 
 const app = express();
 
@@ -37,6 +39,12 @@ app.use('/api/accounts', accountRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/v1/affiliate/shopee', affiliateRoutes);
+
+
+// Register redirect route (at root /s/)
+app.use('/s', redirectRoutes);
+
 app.use('/api/stats', statsRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/cron', cronRoutes);
