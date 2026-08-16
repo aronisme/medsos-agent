@@ -2,8 +2,14 @@ import React, { useState } from 'react';
 import { Link as LinkIcon, Copy, Check, Zap, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Loader2 } from 'lucide-react';
 import api from '../api/client';
 
-export default function AffiliateGenerator() {
-  const [productUrl, setProductUrl] = useState('');
+export default function AffiliateGenerator({ initialUrl }) {
+  const [productUrl, setProductUrl] = useState(initialUrl || '');
+
+  React.useEffect(() => {
+    if (initialUrl) {
+      setProductUrl(initialUrl);
+    }
+  }, [initialUrl]);
   
   // Tracking state
   const [showTracking, setShowTracking] = useState(false);

@@ -10,12 +10,17 @@ import AccountManager from './components/AccountManager';
 import TemplateManager from './components/TemplateManager';
 import ApiDocumentation from './components/ApiDocumentation';
 import AffiliateGenerator from './components/AffiliateGenerator';
+import ShopeeExtractor from './components/ShopeeExtractor';
 import api from './api/client';
 
 export default function App() {
   const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [health, setHealth] = useState(null);
+
+  // Cross-tab state sharing
+  const [composerInitialData, setComposerInitialData] = useState(null);
+  const [affiliateInitialUrl, setAffiliateInitialUrl] = useState('');
 
   useEffect(() => {
     // Health check endpoint
@@ -52,24 +57,51 @@ export default function App() {
         {/* Main Workspace */}
         <main className="flex-1 p-4 lg:p-8 min-w-0">
           {activeTab === 'dashboard' && <StatsOverview setActiveTab={setActiveTab} />}
+          
           {activeTab === 'composer' && (
             <PostComposer
+              initialData={composerInitialData}
               onPostCreated={() => {
-                // Optionally switch to posts view
+                setComposerInitialData(null);
               }}
             />
           )}
+
+          {activeTab === 'shopee_extractor' && (
+            <ShopeeExtractor
+              onSendToComposer={(productInfo) => {
+                setComposerInitialData({
+                  title: productInfo.title,
+                  content: `🔥 REKOMENDASI PRODUK 🔥\n\n${productInfo.title}\n\nHarga: Rp ${productInfo.price?.toLocaleString('id-ID')}\n\n👉 Cek dan beli di sini:\n${productInfo.url}`,
+                  image: productInfo.image,
+                  mediaType: 'image'
+                });
+                setActiveTab('composer');
+              }}
+              onSendToAffiliate={(canonicalUrl) => {
+                setAffiliateInitialUrl(canonicalUrl);
+                setActiveTab('shopee_affiliate');
+              }}
+            />
+          )}
+
           {activeTab === 'posts' && <PostList />}
           {activeTab === 'accounts' && <AccountManager />}
+          
           {activeTab === 'templates' && (
             <TemplateManager
               onApplyTemplate={(content, title) => {
+                setComposerInitialData({ title, content });
                 setActiveTab('composer');
               }}
             />
           )}
+
+          {activeTab === 'shopee_affiliate' && (
+            <AffiliateGenerator initialUrl={affiliateInitialUrl} />
+          )}
+
           {activeTab === 'api_docs' && <ApiDocumentation />}
-          {activeTab === 'shopee_affiliate' && <AffiliateGenerator />}
         </main>
       </div>
     </div>

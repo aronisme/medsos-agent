@@ -23,11 +23,11 @@ import {
   Share2,
 } from 'lucide-react';
 
-export default function PostComposer({ onPostCreated }) {
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [mediaType, setMediaType] = useState('image');
+export default function PostComposer({ onPostCreated, initialData }) {
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [content, setContent] = useState(initialData?.content || '');
+  const [mediaUrl, setMediaUrl] = useState(initialData?.mediaUrl || initialData?.image || '');
+  const [mediaType, setMediaType] = useState(initialData?.mediaType || 'image');
   const [postType, setPostType] = useState('feed'); // 'feed' | 'reel'
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -42,8 +42,24 @@ export default function PostComposer({ onPostCreated }) {
   const [quotePostId, setQuotePostId] = useState('');
   const [showThreadsOptions, setShowThreadsOptions] = useState(false);
 
-  const [mediaList, setMediaList] = useState([]); // [{ url, type }]
+  const [mediaList, setMediaList] = useState(
+    initialData?.mediaUrl || initialData?.image 
+      ? [{ url: initialData.mediaUrl || initialData.image, type: initialData.mediaType || 'image' }] 
+      : []
+  );
   const [uploadProgress, setUploadProgress] = useState('');
+
+  useEffect(() => {
+    if (initialData) {
+      if (initialData.title) setTitle(initialData.title);
+      if (initialData.content) setContent(initialData.content);
+      if (initialData.mediaUrl || initialData.image) {
+        const url = initialData.mediaUrl || initialData.image;
+        setMediaUrl(url);
+        setMediaList([{ url, type: initialData.mediaType || 'image' }]);
+      }
+    }
+  }, [initialData]);
 
   // Fetch accounts on mount
   useEffect(() => {
