@@ -4,6 +4,7 @@
  */
 
 const { adaptShopeeProduct } = require('./product-adapter');
+const { adaptPiloterrProduct } = require('./piloterr-adapter');
 const { parseShopeeUrl } = require('./url-parser');
 
 const ENDPOINTS = {
@@ -147,6 +148,48 @@ async function extractProductByIds(shopId, itemId) {
  * @returns {Promise<{ product: object, meta: object }>}
  */
 async function extractProductFromUrl(inputUrl) {
+  const startTime = Date.now();
+  const piloterrKey = process.env.PILOTERR_API_KEY;
+
+  if (piloterrKey) {
+    try {
+      const piloterrUrl = `https://api.piloterr.com/v2/shopee/product?url=${encodeURIComponent(inputUrl)}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for 3rd party
+      
+      const response = await fetch(piloterrUrl, {
+        method: 'GET',
+        headers: {
+          'x-api-key': piloterrKey
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const rawJson = await response.json();
+        const { product, diagnostics } = adaptPiloterrProduct(rawJson, inputUrl);
+        const durationMs = Date.now() - startTime;
+        return {
+          product,
+          meta: {
+            strategy: 'piloterr_api',
+            cached: false,
+            duration_ms: durationMs,
+            fields: diagnostics
+          }
+        };
+      } else {
+        console.warn(`Piloterr API failed with status ${response.status}. Falling back to direct HTTP...`);
+      }
+    } catch (err) {
+      console.warn(`Piloterr extraction error: ${err.message}. Falling back to direct HTTP...`);
+    }
+  }
+
+  // Fallback to legacy extraction
   const { shop_id, item_id } = await parseShopeeUrl(inputUrl);
   return await extractProductByIds(shop_id, item_id);
 }
