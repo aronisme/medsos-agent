@@ -153,7 +153,7 @@ async function extractProductFromUrl(inputUrl) {
 
   if (piloterrKey) {
     try {
-      const piloterrUrl = `https://api.piloterr.com/v2/shopee/product?url=${encodeURIComponent(inputUrl)}`;
+      const piloterrUrl = `https://api.piloterr.com/v2/shopee/product?query=${encodeURIComponent(inputUrl)}`;
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for 3rd party
