@@ -18,23 +18,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @param {string} [options.quotePostId] 
  */
 async function createMediaContainer(threadsUserId, token, { text, imageUrl, videoUrl, isCarouselItem = false, replyToId, quotePostId }) {
-  const body = { access_token: token };
-  if (text) body.text = text;
-  if (isCarouselItem) body.is_carousel_item = 'true';
-  if (replyToId) body.reply_to_id = replyToId;
-  if (quotePostId) body.quote_post_id = quotePostId;
+  const params = { access_token: token };
+  if (text) params.text = text;
+  if (isCarouselItem) params.is_carousel_item = 'true';
+  if (replyToId) params.reply_to_id = replyToId;
+  if (quotePostId) params.quote_post_id = quotePostId;
 
   if (videoUrl) {
-    body.media_type = 'VIDEO';
-    body.video_url = videoUrl;
+    params.media_type = 'VIDEO';
+    params.video_url = videoUrl;
   } else if (imageUrl) {
-    body.media_type = 'IMAGE';
-    body.image_url = imageUrl;
+    params.media_type = 'IMAGE';
+    params.image_url = imageUrl;
   } else {
-    body.media_type = 'TEXT';
+    params.media_type = 'TEXT';
   }
 
-  const { data } = await axios.post(`${BASE}/${threadsUserId}/threads`, body);
+  const { data } = await axios.post(`${BASE}/${threadsUserId}/threads`, null, { params });
   if (!data?.id) throw new Error(`Threads create container gagal: ${JSON.stringify(data)}`);
   return data.id;
 }
@@ -43,16 +43,16 @@ async function createMediaContainer(threadsUserId, token, { text, imageUrl, vide
  * Buat Carousel media container untuk Threads (dari beberapa child container id).
  */
 async function createCarouselContainer(threadsUserId, token, childrenIds, text, { replyToId, quotePostId } = {}) {
-  const body = {
+  const params = {
     media_type: 'CAROUSEL',
     children: childrenIds.join(','),
     access_token: token,
   };
-  if (text) body.text = text;
-  if (replyToId) body.reply_to_id = replyToId;
-  if (quotePostId) body.quote_post_id = quotePostId;
+  if (text) params.text = text;
+  if (replyToId) params.reply_to_id = replyToId;
+  if (quotePostId) params.quote_post_id = quotePostId;
 
-  const { data } = await axios.post(`${BASE}/${threadsUserId}/threads`, body);
+  const { data } = await axios.post(`${BASE}/${threadsUserId}/threads`, null, { params });
   if (!data?.id) throw new Error(`Threads create carousel container gagal: ${JSON.stringify(data)}`);
   return data.id;
 }
@@ -82,9 +82,11 @@ async function waitForMediaReady(token, creationId, timeoutMs = 120000) {
  * Publish media yang sudah siap.
  */
 async function publishMedia(threadsUserId, token, creationId) {
-  const { data } = await axios.post(`${BASE}/${threadsUserId}/threads_publish`, {
-    creation_id: creationId,
-    access_token: token,
+  const { data } = await axios.post(`${BASE}/${threadsUserId}/threads_publish`, null, {
+    params: {
+      creation_id: creationId,
+      access_token: token,
+    }
   });
   if (!data?.id) throw new Error(`Threads publish gagal: ${JSON.stringify(data)}`);
   return data.id;
