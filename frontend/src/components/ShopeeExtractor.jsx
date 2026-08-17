@@ -22,7 +22,8 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  FolderArchive
 } from 'lucide-react';
 import api from '../api/client';
 
@@ -32,6 +33,8 @@ export default function ShopeeExtractor({ onSendToComposer, onSendToAffiliate })
   const [productData, setProductData] = useState(null);
   const [metaData, setMetaData] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [savedToBank, setSavedToBank] = useState(false);
+  const [savingToBank, setSavingToBank] = useState(false);
 
   // Active media viewer state
   const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video'
@@ -103,6 +106,35 @@ export default function ShopeeExtractor({ onSendToComposer, onSendToAffiliate })
       currency: 'IDR',
       maximumFractionDigits: 0
     }).format(number);
+  };
+
+  const handleSaveToAffiliateProducts = async () => {
+    if (!productData) return;
+    setSavingToBank(true);
+    try {
+      await api.post('/affiliate-products', {
+        title: productData.title,
+        price: productData.price,
+        original_price: productData.original_price,
+        discount: productData.discount,
+        rating: productData.shop?.rating || 5.0,
+        shop_name: productData.shop?.name,
+        shop_location: productData.shop?.location,
+        product_url: productData.canonical_url || inputUrl,
+        description: productData.description,
+        images: productData.images || [],
+        videos: productData.videos || [],
+        variants: productData.variants || [],
+        category: 'Shopee Extracted'
+      });
+      setSavedToBank(true);
+      setTimeout(() => setSavedToBank(false), 3000);
+    } catch (err) {
+      console.error('Error saving to affiliate products:', err);
+      alert('Gagal menyimpan ke Produk Affiliate: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSavingToBank(false);
+    }
   };
 
   return (
@@ -481,6 +513,33 @@ export default function ShopeeExtractor({ onSendToComposer, onSendToAffiliate })
                 >
                   {copiedJson ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   <span>{copiedJson ? 'JSON DISALIN' : 'SALIN CLEAN JSON'}</span>
+                </button>
+
+                <button
+                  onClick={handleSaveToAffiliateProducts}
+                  disabled={savingToBank}
+                  className={`flex-1 min-w-[160px] flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold transition-all active:scale-[0.98] ${
+                    savedToBank
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700'
+                  }`}
+                >
+                  {savingToBank ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : savedToBank ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                      <span>TERSIMPAN DI BANK!</span>
+                    </>
+                  ) : (
+                    <>
+                      <FolderArchive className="w-4 h-4 text-indigo-400" />
+                      <span>SIMPAN KE PRODUK AFFILIATE</span>
+                    </>
+                  )}
                 </button>
 
                 {onSendToComposer && (

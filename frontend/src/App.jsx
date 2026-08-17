@@ -11,6 +11,7 @@ import TemplateManager from './components/TemplateManager';
 import ApiDocumentation from './components/ApiDocumentation';
 import AffiliateGenerator from './components/AffiliateGenerator';
 import ShopeeExtractor from './components/ShopeeExtractor';
+import AffiliateProducts from './components/AffiliateProducts';
 import api from './api/client';
 
 export default function App() {
@@ -63,6 +64,19 @@ export default function App() {
               initialData={composerInitialData}
               onPostCreated={() => {
                 setComposerInitialData(null);
+              }}
+            />
+          )}
+
+          {activeTab === 'affiliate_products' && (
+            <AffiliateProducts
+              onSendToComposer={(data) => {
+                setComposerInitialData(data);
+                setActiveTab('composer');
+              }}
+              onSendToAffiliate={(canonicalUrl) => {
+                setAffiliateInitialUrl(canonicalUrl);
+                setActiveTab('shopee_affiliate');
               }}
             />
           )}

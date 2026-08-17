@@ -14,6 +14,7 @@ const statsRoutes = require('./routes/stats');
 const agentRoutes = require('./routes/agent');
 const cronRoutes = require('./routes/cron');
 const affiliateRoutes = require('./routes/affiliate');
+const affiliateProductsRoutes = require('./routes/affiliate-products');
 const redirectRoutes = require('./routes/redirect');
 const shopeeExtractorRoutes = require('./routes/shopee-extractor');
 
@@ -43,6 +44,8 @@ app.use('/api/posts', postRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/v1/affiliate/shopee', affiliateRoutes);
+app.use('/api/affiliate-products', affiliateProductsRoutes);
+app.use('/api/content-bank', affiliateProductsRoutes);
 
 // Shopee Extractor Routes
 app.use('/api/shopee', shopeeExtractorRoutes);

@@ -42,18 +42,26 @@ export default function PostComposer({ onPostCreated, initialData }) {
   const [quotePostId, setQuotePostId] = useState('');
   const [showThreadsOptions, setShowThreadsOptions] = useState(false);
 
-  const [mediaList, setMediaList] = useState(
-    initialData?.mediaUrl || initialData?.image 
-      ? [{ url: initialData.mediaUrl || initialData.image, type: initialData.mediaType || 'image' }] 
-      : []
-  );
+  const [mediaList, setMediaList] = useState(() => {
+    if (initialData?.mediaList && Array.isArray(initialData.mediaList) && initialData.mediaList.length > 0) {
+      return initialData.mediaList;
+    }
+    if (initialData?.mediaUrl || initialData?.image) {
+      return [{ url: initialData.mediaUrl || initialData.image, type: initialData.mediaType || 'image' }];
+    }
+    return [];
+  });
   const [uploadProgress, setUploadProgress] = useState('');
 
   useEffect(() => {
     if (initialData) {
       if (initialData.title) setTitle(initialData.title);
       if (initialData.content) setContent(initialData.content);
-      if (initialData.mediaUrl || initialData.image) {
+      if (initialData.mediaList && Array.isArray(initialData.mediaList) && initialData.mediaList.length > 0) {
+        setMediaList(initialData.mediaList);
+        setMediaUrl(initialData.mediaList[0]?.url || '');
+        setMediaType(initialData.mediaList[0]?.type || 'image');
+      } else if (initialData.mediaUrl || initialData.image) {
         const url = initialData.mediaUrl || initialData.image;
         setMediaUrl(url);
         setMediaList([{ url, type: initialData.mediaType || 'image' }]);
