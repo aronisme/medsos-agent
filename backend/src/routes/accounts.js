@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/accounts � manual add
+// POST /api/accounts – manual add (upsert)
 router.post('/', async (req, res) => {
   const { platform, page_id, page_name, access_token } = req.body || {};
   if (!['facebook', 'instagram', 'threads'].includes(platform)) {
@@ -39,13 +39,38 @@ router.post('/', async (req, res) => {
   }
   if (!page_id) return res.status(400).json({ error: 'page_id wajib diisi.' });
 
+  const cleanPageId = String(page_id).trim();
+
   try {
+    const existingSnap = await db.collection('social_accounts')
+      .where('user_id', '==', req.user.id)
+      .where('platform', '==', platform)
+      .where('page_id', '==', cleanPageId)
+      .limit(1)
+      .get();
+
+    if (!existingSnap.empty) {
+      const existingDoc = existingSnap.docs[0];
+      const updateData = {
+        page_name: page_name ? String(page_name).trim() : (existingDoc.data().page_name || null),
+        is_active: 1,
+        updated_at: new Date().toISOString()
+      };
+      if (access_token) {
+        updateData.access_token = access_token;
+      }
+      await existingDoc.ref.update(updateData);
+      const data = { ...existingDoc.data(), ...updateData };
+      const { access_token: _at, ...rest } = data;
+      return res.json({ account: { id: existingDoc.id, ...rest, has_token: Boolean(data.access_token) } });
+    }
+
     const newAccount = {
       user_id: req.user.id,
       platform,
-      page_id: String(page_id),
+      page_id: cleanPageId,
       access_token: access_token || null,
-      page_name: page_name || null,
+      page_name: page_name ? String(page_name).trim() : null,
       is_active: 1,
       created_at: new Date().toISOString()
     };

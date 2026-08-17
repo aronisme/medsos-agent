@@ -49,7 +49,7 @@ async function publishTarget(post, target, account) {
     
     return { success: true, postId: result.postId, dryRun: result.dryRun };
   } catch (err) {
-    const message = err?.response?.data?.error?.message || err?.response?.data?.message || err.message;
+    const message = err?.response?.data?.error?.error_user_msg || err?.response?.data?.error?.message || err?.response?.data?.message || err.message;
     await addLog(post.user_id, 'post_failed', { targetId: target.id, platform: target.platform, error: message });
     throw new Error(message);
   }

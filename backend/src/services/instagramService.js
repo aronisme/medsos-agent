@@ -12,14 +12,20 @@ async function createMediaContainer(igUserId, token, { imageUrl, videoUrl, capti
   const body = { caption, access_token: token };
   if (isCarouselItem) body.is_carousel_item = 'true';
   if (videoUrl) {
-    body.media_type = 'VIDEO';
+    body.media_type = 'REELS';
     body.video_url = videoUrl;
+    body.share_to_feed = true;
   } else {
     body.image_url = imageUrl;
   }
-  const { data } = await axios.post(`${BASE}/${igUserId}/media`, body);
-  if (!data?.id) throw new Error(`IG create container gagal: ${JSON.stringify(data)}`);
-  return data.id;
+  try {
+    const { data } = await axios.post(`${BASE}/${igUserId}/media`, body);
+    if (!data?.id) throw new Error(`IG create container gagal: ${JSON.stringify(data)}`);
+    return data.id;
+  } catch (err) {
+    const detail = err?.response?.data?.error?.error_user_msg || err?.response?.data?.error?.message || err?.message;
+    throw new Error(`IG create container gagal: ${detail}`);
+  }
 }
 
 /**
