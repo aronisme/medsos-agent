@@ -1159,6 +1159,14 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                   </div>
                 )}
 
+                {/* Notes / Brand Information */}
+                {selectedProductDetail.notes && (
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs flex items-center gap-2 text-slate-400">
+                    <Tag className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span className="truncate">{selectedProductDetail.notes}</span>
+                  </div>
+                )}
+
                 {/* Action Buttons Toolbar */}
                 <div className="pt-3 border-t border-slate-800 flex flex-wrap gap-2.5">
                   <button
@@ -1347,6 +1355,7 @@ function AddEditProductModal({ product, onClose, onSaved }) {
   const [rating, setRating] = useState(product?.rating || 5.0);
   const [soldCount, setSoldCount] = useState(product?.sold_count || '');
   const [description, setDescription] = useState(product?.description || '');
+  const [notes, setNotes] = useState(product?.notes || '');
 
   // Media Manager state
   const [images, setImages] = useState(product?.images || []);
@@ -1446,6 +1455,7 @@ function AddEditProductModal({ product, onClose, onSaved }) {
         rating: parseFloat(rating) || 5.0,
         sold_count: soldCount,
         description,
+        notes,
         images,
         videos
       };
@@ -1693,6 +1703,18 @@ function AddEditProductModal({ product, onClose, onSaved }) {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Spesifikasi, bahan, ukuran, dan keunggulan produk..."
               className="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/50 outline-none whitespace-pre-wrap"
+            />
+          </div>
+
+          {/* Notes & Brand info */}
+          <div>
+            <label className="block font-bold text-slate-300 mb-1.5">Catatan / Info Brand</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Contoh: Diimpor otomatis dari Shopee Scraper - Brand: Bella Square"
+              className="w-full bg-slate-950 border border-slate-800 text-slate-100 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/50 outline-none"
             />
           </div>
 

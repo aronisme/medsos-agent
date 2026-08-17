@@ -178,6 +178,19 @@ router.post('/bulk', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Daftar produk tidak boleh kosong.' });
     }
 
+    // Fetch existing products for this user to check duplicates by product_url
+    const existingSnap = await db.collection('affiliate_products')
+      .where('user_id', '==', req.user.id)
+      .get();
+    
+    const existingUrlMap = new Map();
+    existingSnap.docs.forEach(doc => {
+      const d = doc.data();
+      if (d.product_url) {
+        existingUrlMap.set(d.product_url.trim(), doc.id);
+      }
+    });
+
     const savedProducts = [];
     const batch = db.batch();
     const now = new Date().toISOString();
@@ -198,17 +211,19 @@ router.post('/bulk', async (req, res) => {
       const shopName = formatted['Shop Name'] || rawItem.shop_name || raw.shop_name || raw.shop_data?.shop_name || '';
       const shopLocation = formatted['Shop Location'] || rawItem.shop_location || raw.shop_location || raw.shop_data?.shop_location || '';
       const productUrl = formatted['Product URL'] || rawItem.product_url || rawItem.url || '';
+      const affiliateUrl = rawItem.affiliate_url || (productUrl ? productUrl : '');
       const description = formatted['Description'] || rawItem.description || raw.description || '';
       const productVideo = formatted['Product Video'] || rawItem.product_video || rawItem.video || '';
+      const brand = formatted['Brand'] || rawItem.brand || raw.brand || '';
 
-      // Extract images
+      // Extract images (Max 5 HD images)
       let images = [];
-      if (rawItem.images && Array.isArray(rawItem.images)) {
-        images = rawItem.images;
+      if (rawItem.images && Array.isArray(rawItem.images) && rawItem.images.length > 0) {
+        images = rawItem.images.slice(0, 5);
       } else if (formatted['All Images']) {
-        images = String(formatted['All Images']).split(' || ').map(s => s.trim()).filter(Boolean);
+        images = String(formatted['All Images']).split(' || ').map(s => s.trim()).filter(Boolean).slice(0, 5);
       } else if (raw.images && Array.isArray(raw.images)) {
-        images = raw.images.map(img => img.startsWith('http') ? img : `https://down-id.img.susercontent.com/file/${img}`);
+        images = raw.images.map(img => img.startsWith('http') ? img : `https://down-id.img.susercontent.com/file/${img}`).slice(0, 5);
       } else if (rawItem.image) {
         images = [rawItem.image];
       }
@@ -221,29 +236,49 @@ router.post('/bulk', async (req, res) => {
         videos = rawItem.videos;
       }
 
-      // Build media array
-      const media = [];
-      videos.forEach(v => {
-        if (v) media.push({ type: 'video', url: typeof v === 'string' ? v : v.url });
-      });
-      images.forEach(img => {
-        if (img) media.push({ type: 'image', url: typeof img === 'string' ? img : img.url });
-      });
+      // Build unified media array
+      let media = [];
+      if (Array.isArray(rawItem.media) && rawItem.media.length > 0) {
+        media = rawItem.media;
+      } else {
+        videos.forEach(v => {
+          if (v) media.push({ type: 'video', url: typeof v === 'string' ? v : v.url });
+        });
+        images.forEach(img => {
+          if (img) media.push({ type: 'image', url: typeof img === 'string' ? img : img.url });
+        });
+      }
 
       // Variants
       let variants = [];
-      if (Array.isArray(rawItem.variants)) {
+      if (Array.isArray(rawItem.variants) && rawItem.variants.length > 0) {
         variants = rawItem.variants;
       } else {
         const colorOptions = formatted['Color Options'] ? String(formatted['Color Options']).split(' | ') : [];
         const sizeOptions = formatted['Size Options'] ? String(formatted['Size Options']).split(' | ') : [];
-        colorOptions.forEach(c => variants.push({ name: c.trim(), type: 'color' }));
-        sizeOptions.forEach(s => variants.push({ name: s.trim(), type: 'size' }));
+        colorOptions.forEach(c => {
+          if (c && c !== 'Standard') variants.push({ name: c.trim(), type: 'color' });
+        });
+        sizeOptions.forEach(s => {
+          if (s && s !== 'Standard') variants.push({ name: s.trim(), type: 'size' });
+        });
       }
 
-      const newDocRef = db.collection('affiliate_products').doc();
+      // Notes
+      let notes = rawItem.notes;
+      if (!notes) {
+        notes = `Diimpor otomatis dari Shopee Scraper${brand ? ` - Brand: ${brand}` : ''}`;
+      }
+
+      const cleanProductUrl = String(productUrl || '').trim();
+      const existingDocId = cleanProductUrl ? existingUrlMap.get(cleanProductUrl) : null;
+      
+      const docRef = existingDocId 
+        ? db.collection('affiliate_products').doc(existingDocId)
+        : db.collection('affiliate_products').doc();
+
       const productData = {
-        id: newDocRef.id,
+        id: docRef.id,
         user_id: req.user.id,
         title: String(title).trim(),
         price: parsePriceNumber(rawPrice),
@@ -251,31 +286,35 @@ router.post('/bulk', async (req, res) => {
         discount: String(discount || ''),
         currency: 'Rp',
         rating: parseFloat(ratingStar) || 5.0,
-        sold_count: String(soldCount || ''),
-        shop_name: String(shopName || ''),
-        shop_location: String(shopLocation || ''),
-        category: String(rawItem.category || 'Shopee Scraped'),
-        product_url: String(productUrl || ''),
-        affiliate_url: String(rawItem.affiliate_url || ''),
+        sold_count: String(soldCount || 'Terjual'),
+        shop_name: String(shopName || 'Shopee Store'),
+        shop_location: String(shopLocation || 'Indonesia'),
+        category: String(rawItem.category || formatted['Category'] || 'Shopee Affiliate'),
+        product_url: cleanProductUrl,
+        affiliate_url: String(affiliateUrl || cleanProductUrl),
         description: String(description || ''),
         images: images,
         videos: videos,
         media: media,
         variants: variants,
-        notes: rawItem.notes || 'Diimpor dari Shopee Scraper',
-        created_at: now,
+        notes: String(notes),
         updated_at: now
       };
 
-      batch.set(newDocRef, productData);
+      if (!existingDocId) {
+        productData.created_at = now;
+      }
+
+      batch.set(docRef, productData, { merge: true });
       savedProducts.push(productData);
+      if (cleanProductUrl) existingUrlMap.set(cleanProductUrl, docRef.id);
     }
 
     await batch.commit();
 
     res.status(201).json({
       success: true,
-      message: `Berhasil mengimpor ${savedProducts.length} produk ke Produk Affiliate.`,
+      message: `Berhasil menyinkronkan ${savedProducts.length} produk ke Produk Affiliate.`,
       imported_count: savedProducts.length,
       products: savedProducts
     });
