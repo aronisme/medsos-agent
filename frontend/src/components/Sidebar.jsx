@@ -8,6 +8,8 @@ import {
   Sparkles,
   Terminal,
   FolderArchive,
+  ShoppingBag,
+  Link as LinkIcon,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
