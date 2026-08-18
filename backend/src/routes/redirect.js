@@ -88,19 +88,6 @@ function parseDeviceAndOS(userAgent = '') {
   return { device, os, browser };
 }
 
-// In-memory cache to debounce duplicate hits from Link Shim / prefetch (TTL 6s)
-const clickDebounceCache = new Map();
-const DEBOUNCE_WINDOW_MS = 6000;
-
-// Periodic cleanup of stale cache entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, timestamp] of clickDebounceCache.entries()) {
-    if (now - timestamp > 30000) {
-      clickDebounceCache.delete(key);
-    }
-  }
-}, 60000).unref();
 
 // Utility: Check if request is browser pre-render / pre-fetch
 function isPrefetchRequest(req) {
@@ -117,7 +104,7 @@ function isPrefetchRequest(req) {
 }
 
 // GET /s/:code
-// Fast Redirect with Smart Deduplication & Asynchronous Non-Blocking Analytics Logging
+// Fast Redirect with Persistent Cooldown & Asynchronous Non-Blocking Analytics Logging
 router.get('/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -137,36 +124,25 @@ router.get('/:code', async (req, res) => {
       return res.status(404).send('Link tujuan tidak valid.');
     }
 
-    // Check prefetch & duplicate rapid hits (e.g. Meta Link Shim pre-check)
-    const isPrefetch = isPrefetchRequest(req);
-    const rawIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress || '';
-    const clientIp = String(rawIp).split(',')[0].trim();
     const userAgent = req.get('User-Agent') || '';
-    const fingerprint = `${code}:${clientIp}:${userAgent.slice(0, 80)}`;
+    const referer = req.get('Referer') || req.get('Referrer') || '';
+    const isBot = detectBot(userAgent);
+    const platform = classifyPlatform(referer, userAgent);
 
-    const nowMs = Date.now();
-    const lastHit = clickDebounceCache.get(fingerprint);
-    const isDuplicateHit = Boolean(lastHit && (nowMs - lastHit < DEBOUNCE_WINDOW_MS));
-
-    // Update debounce tracker if it's a new legitimate hit
-    if (!isDuplicateHit && !isPrefetch) {
-      clickDebounceCache.set(fingerprint, nowMs);
-    }
+    // Persistent serverless cooldown check (12 seconds window per shortlink)
+    // Eliminates Facebook Link-Shim proxy pre-checks, pre-rendering, and double-taps
+    const nowEpoch = Date.now();
+    const lastClickEpoch = Number(data.last_click_epoch) || 0;
+    const timeSinceLastClick = nowEpoch - lastClickEpoch;
+    const isPrefetch = isPrefetchRequest(req);
+    const isRapidDuplicate = Boolean(lastClickEpoch > 0 && timeSinceLastClick < 12000);
 
     // 2. Perform Instant HTTP 302 Redirect (Zero Latency)
     res.redirect(302, destination);
 
-    // If request is browser pre-render or duplicate Link-Shim hit within 6s, skip counting
-    if (isPrefetch || isDuplicateHit) {
-      return;
-    }
-
-    // 3. Process Analytics Asynchronously in Background (Fire and Forget)
+    // 3. Process Analytics Asynchronously in Background
     setImmediate(async () => {
       try {
-        const referer = req.get('Referer') || req.get('Referrer') || '';
-        const isBot = detectBot(userAgent);
-        const platform = classifyPlatform(referer, userAgent);
         const { device, os, browser } = parseDeviceAndOS(userAgent);
 
         // Geolocation headers (Vercel / Cloudflare / Standard)
@@ -178,9 +154,19 @@ router.get('/:code', async (req, res) => {
         const dateKey = nowIso.split('T')[0]; // YYYY-MM-DD
         const hour = now.getHours();
 
+        // If request is browser pre-render or duplicate Link-Shim within 12s, only refresh epoch timestamp
+        if (isPrefetch || isRapidDuplicate) {
+          await docRef.update({
+            last_click_epoch: nowEpoch,
+            updated_at: nowIso
+          });
+          return;
+        }
+
         // Increment stats on the short link document atomically
         const updatePayload = {
           total_clicks: FieldValue.increment(1),
+          last_click_epoch: nowEpoch,
           last_clicked_at: nowIso,
           updated_at: nowIso
         };
