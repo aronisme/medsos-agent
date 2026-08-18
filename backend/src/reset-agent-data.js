@@ -59,8 +59,13 @@ async function resetAgentWork() {
     await deleteCollection('knowledge_insights');
     console.log('   ✓ knowledge_insights bersih.');
 
-    // 5. Hapus Postingan Terjadwal / Draf Otomatis (posts)
-    console.log('5. Membersihkan postingan terjadwal otomatis di koleksi posts...');
+    // 5. Hapus Log Klik Analitik (link_clicks)
+    console.log('5. Membersihkan koleksi log klik analitik (link_clicks)...');
+    await deleteCollection('link_clicks');
+    console.log('   ✓ link_clicks bersih.');
+
+    // 6. Hapus Postingan Terjadwal / Draf Otomatis (posts)
+    console.log('6. Membersihkan postingan terjadwal otomatis di koleksi posts...');
     const postsSnap = await db.collection('posts').get();
     let deletedPostsCount = 0;
     const postBatch = db.batch();
@@ -73,8 +78,9 @@ async function resetAgentWork() {
     }
     console.log(`   ✓ Menghapus ${deletedPostsCount} postingan dari antrean.`);
 
-    // 6. Reset Status Seluruh Produk di affiliate_products menjadi "NEW"
-    console.log('6. Mengembalikan status seluruh produk affiliate menjadi "NEW" (Stok Baru)...');
+    // 7. Reset Status Seluruh Produk di affiliate_products menjadi "NEW"
+    console.log('7. Mengembalikan status seluruh produk affiliate menjadi "NEW" (Stok Baru)...');
+
     const productsSnap = await db.collection('affiliate_products').get();
     let resetProductsCount = 0;
     const productBatch = db.batch();
