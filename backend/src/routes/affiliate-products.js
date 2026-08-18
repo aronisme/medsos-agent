@@ -208,9 +208,19 @@ router.post('/bulk', async (req, res) => {
       const ratingStar = formatted['Rating Star'] || rawItem.rating || raw.item_rating?.rating_star || 5.0;
       const soldCount = formatted['Sold Count'] || formatted['Historical Sold'] || rawItem.sold_count || raw.sold || raw.historical_sold || '';
 
-      const shopName = formatted['Shop Name'] || rawItem.shop_name || raw.shop_name || raw.shop_data?.shop_name || '';
-      const shopLocation = formatted['Shop Location'] || rawItem.shop_location || raw.shop_location || raw.shop_data?.shop_location || '';
-      const productUrl = formatted['Product URL'] || rawItem.product_url || rawItem.url || '';
+      const rawItemId = formatted['Item ID'] || rawItem.id || rawItem.item_id || raw.itemid || raw.item_id || '';
+      const rawShopId = formatted['Shop ID'] || rawItem.shop_id || raw.shopid || raw.shop_id || raw.shop_data?.shop_id || '';
+
+      let productUrl = rawItem.product_url || formatted['Product URL'] || rawItem.url || rawItem.productUrl || raw.itemurl || '';
+      if (!productUrl || productUrl === 'Not Available' || productUrl === '-' || productUrl === 'undefined') {
+        if (rawShopId && rawItemId) {
+          productUrl = `https://shopee.co.id/product/${rawShopId}/${rawItemId}`;
+        } else if (rawItemId) {
+          productUrl = `https://shopee.co.id/product/0/${rawItemId}`;
+        } else {
+          productUrl = '';
+        }
+      }
       const affiliateUrl = rawItem.affiliate_url || (productUrl ? productUrl : '');
       const description = formatted['Description'] || rawItem.description || raw.description || '';
       const productVideo = formatted['Product Video'] || rawItem.product_video || rawItem.video || '';
