@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard,
+
   PenTool,
   Calendar,
   Share2,
@@ -11,14 +12,20 @@ import {
   Link as LinkIcon,
   BarChart3,
   LineChart,
+  Bot,
+  Kanban,
+  FlaskConical,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'post_analytics', label: 'Analitik Postingan', icon: LineChart, highlight: true },
-    { id: 'composer', label: 'Buat Postingan', icon: PenTool, highlight: true },
-    { id: 'affiliate_products', label: 'Produk Affiliate', icon: FolderArchive, highlight: true },
+    { id: 'agent_dashboard', label: 'Agent Command Center', icon: Bot, highlight: true },
+    { id: 'product_lifecycle', label: 'Siklus Hidup Produk', icon: Kanban, highlight: true },
+    { id: 'experiment_lab', label: 'Lab Eksperimen & A/B', icon: FlaskConical, highlight: true },
+    { id: 'post_analytics', label: 'Analitik Postingan', icon: LineChart },
+    { id: 'composer', label: 'Buat Postingan', icon: PenTool },
+    { id: 'affiliate_products', label: 'Produk Affiliate', icon: FolderArchive },
     { id: 'link_analytics', label: 'Analitik Link', icon: BarChart3 },
     { id: 'posts', label: 'Kelola & Jadwal', icon: Calendar },
     { id: 'accounts', label: 'Akun Sosmed', icon: Share2 },
@@ -26,6 +33,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { id: 'shopee_affiliate', label: 'Shopee Affiliate', icon: LinkIcon },
     { id: 'api_docs', label: 'API Agent', icon: Terminal },
   ];
+
 
   return (
     <aside className="w-full md:w-64 bg-slate-900/60 border-r border-slate-800/80 p-4 shrink-0">

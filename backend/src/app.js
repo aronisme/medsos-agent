@@ -18,8 +18,10 @@ const affiliateProductsRoutes = require('./routes/affiliate-products');
 const redirectRoutes = require('./routes/redirect');
 const analyticsRoutes = require('./routes/analytics');
 const postAnalyticsRoutes = require('./routes/post-analytics');
+const agentOrchestratorRoutes = require('./routes/agent-orchestrator');
 
 const app = express();
+
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' })); // Increased for base64 media upload
@@ -55,7 +57,9 @@ app.use('/s', redirectRoutes);
 
 app.use('/api/stats', statsRoutes);
 app.use('/api/agent', agentRoutes);
+app.use('/api/agent-orchestrator', agentOrchestratorRoutes);
 app.use('/api/cron', cronRoutes);
+
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Endpoint tidak ditemukan.' }));

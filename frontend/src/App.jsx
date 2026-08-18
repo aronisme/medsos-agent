@@ -13,7 +13,11 @@ import AffiliateGenerator from './components/AffiliateGenerator';
 import AffiliateProducts from './components/AffiliateProducts';
 import LinkAnalytics from './components/LinkAnalytics';
 import PostAnalytics from './components/PostAnalytics';
+import AgentDashboard from './components/AgentDashboard';
+import ProductQuarterBoard from './components/ProductQuarterBoard';
+import TemplateExperimentLab from './components/TemplateExperimentLab';
 import api from './api/client';
+
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -59,7 +63,11 @@ export default function App() {
         {/* Main Workspace */}
         <main className="flex-1 p-4 lg:p-8 min-w-0">
           {activeTab === 'dashboard' && <StatsOverview setActiveTab={setActiveTab} />}
+          {activeTab === 'agent_dashboard' && <AgentDashboard setActiveTab={setActiveTab} />}
+          {activeTab === 'product_lifecycle' && <ProductQuarterBoard />}
+          {activeTab === 'experiment_lab' && <TemplateExperimentLab />}
           {activeTab === 'post_analytics' && <PostAnalytics />}
+
           
           {activeTab === 'composer' && (
             <PostComposer
