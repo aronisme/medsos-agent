@@ -76,6 +76,8 @@ async function processScheduledPosts() {
           console.error('[scheduler] Error running background autonomous cycle:', autoErr.message);
         }
       });
+    }
+
     // 3. TOKEN HEALTH & AUTO-REFRESH (Cek setiap 12 jam untuk FB, IG, dan Threads):
     const twelveHours = 12 * 60 * 60 * 1000;
     if (now - lastTokenRefreshRun >= twelveHours) {
