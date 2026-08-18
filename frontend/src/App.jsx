@@ -12,6 +12,7 @@ import ApiDocumentation from './components/ApiDocumentation';
 import AffiliateGenerator from './components/AffiliateGenerator';
 import AffiliateProducts from './components/AffiliateProducts';
 import LinkAnalytics from './components/LinkAnalytics';
+import PostAnalytics from './components/PostAnalytics';
 import api from './api/client';
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
         {/* Main Workspace */}
         <main className="flex-1 p-4 lg:p-8 min-w-0">
           {activeTab === 'dashboard' && <StatsOverview setActiveTab={setActiveTab} />}
+          {activeTab === 'post_analytics' && <PostAnalytics />}
           
           {activeTab === 'composer' && (
             <PostComposer

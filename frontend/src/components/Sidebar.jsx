@@ -10,14 +10,16 @@ import {
   FolderArchive,
   Link as LinkIcon,
   BarChart3,
+  LineChart,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'post_analytics', label: 'Analitik Postingan', icon: LineChart, highlight: true },
     { id: 'composer', label: 'Buat Postingan', icon: PenTool, highlight: true },
     { id: 'affiliate_products', label: 'Produk Affiliate', icon: FolderArchive, highlight: true },
-    { id: 'link_analytics', label: 'Analitik Link', icon: BarChart3, highlight: true },
+    { id: 'link_analytics', label: 'Analitik Link', icon: BarChart3 },
     { id: 'posts', label: 'Kelola & Jadwal', icon: Calendar },
     { id: 'accounts', label: 'Akun Sosmed', icon: Share2 },
     { id: 'templates', label: 'Template Caption', icon: FileText },
