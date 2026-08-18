@@ -88,8 +88,36 @@ function parseDeviceAndOS(userAgent = '') {
   return { device, os, browser };
 }
 
+// In-memory cache to debounce duplicate hits from Link Shim / prefetch (TTL 6s)
+const clickDebounceCache = new Map();
+const DEBOUNCE_WINDOW_MS = 6000;
+
+// Periodic cleanup of stale cache entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of clickDebounceCache.entries()) {
+    if (now - timestamp > 30000) {
+      clickDebounceCache.delete(key);
+    }
+  }
+}, 60000).unref();
+
+// Utility: Check if request is browser pre-render / pre-fetch
+function isPrefetchRequest(req) {
+  const secPurpose = String(req.headers['sec-purpose'] || '').toLowerCase();
+  const purpose = String(req.headers['purpose'] || '').toLowerCase();
+  const xPurpose = String(req.headers['x-purpose'] || '').toLowerCase();
+  const xMoz = String(req.headers['x-moz'] || '').toLowerCase();
+  return (
+    secPurpose.includes('prefetch') ||
+    purpose.includes('prefetch') ||
+    xPurpose.includes('preview') ||
+    xMoz.includes('prefetch')
+  );
+}
+
 // GET /s/:code
-// Fast Redirect with Asynchronous Non-Blocking Analytics Logging
+// Fast Redirect with Smart Deduplication & Asynchronous Non-Blocking Analytics Logging
 router.get('/:code', async (req, res) => {
   try {
     const { code } = req.params;
@@ -109,13 +137,33 @@ router.get('/:code', async (req, res) => {
       return res.status(404).send('Link tujuan tidak valid.');
     }
 
+    // Check prefetch & duplicate rapid hits (e.g. Meta Link Shim pre-check)
+    const isPrefetch = isPrefetchRequest(req);
+    const rawIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress || '';
+    const clientIp = String(rawIp).split(',')[0].trim();
+    const userAgent = req.get('User-Agent') || '';
+    const fingerprint = `${code}:${clientIp}:${userAgent.slice(0, 80)}`;
+
+    const nowMs = Date.now();
+    const lastHit = clickDebounceCache.get(fingerprint);
+    const isDuplicateHit = Boolean(lastHit && (nowMs - lastHit < DEBOUNCE_WINDOW_MS));
+
+    // Update debounce tracker if it's a new legitimate hit
+    if (!isDuplicateHit && !isPrefetch) {
+      clickDebounceCache.set(fingerprint, nowMs);
+    }
+
     // 2. Perform Instant HTTP 302 Redirect (Zero Latency)
     res.redirect(302, destination);
+
+    // If request is browser pre-render or duplicate Link-Shim hit within 6s, skip counting
+    if (isPrefetch || isDuplicateHit) {
+      return;
+    }
 
     // 3. Process Analytics Asynchronously in Background (Fire and Forget)
     setImmediate(async () => {
       try {
-        const userAgent = req.get('User-Agent') || '';
         const referer = req.get('Referer') || req.get('Referrer') || '';
         const isBot = detectBot(userAgent);
         const platform = classifyPlatform(referer, userAgent);
