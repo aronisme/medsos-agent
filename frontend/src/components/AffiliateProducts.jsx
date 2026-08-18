@@ -1059,81 +1059,69 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                   </div>
                 )}
 
-                {/* Links Box */}
-                <div className="space-y-2 p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl text-xs">
-                  {/* Product URL */}
-                  {selectedProductDetail.product_url && (
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-slate-400 font-medium flex items-center gap-1 shrink-0">
-                        <LinkIcon className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Link Produk:</span>
-                      </span>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <input
-                          type="text"
-                          readOnly
-                          value={selectedProductDetail.product_url}
-                          className="bg-slate-900 border border-slate-800 text-slate-300 text-[11px] rounded-lg px-2.5 py-1 w-48 sm:w-64 truncate outline-none"
-                        />
-                        <button
-                          onClick={() => copyToClipboard('prod_url', selectedProductDetail.product_url)}
-                          className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
-                          title="Salin Link Produk"
-                        >
-                          {copiedId === 'prod_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                        <a
-                          href={selectedProductDetail.product_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
-                          title="Buka di Tab Baru"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Affiliate URL */}
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
-                    <span className="text-orange-400 font-bold flex items-center gap-1 shrink-0">
-                      <Sparkles className="w-3.5 h-3.5 text-orange-400" />
-                      <span>Link Affiliate:</span>
+                {/* Link Produk Section */}
+                <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl text-xs space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-orange-400 font-bold flex items-center gap-1.5 shrink-0">
+                      <LinkIcon className="w-4 h-4 text-orange-400" />
+                      <span>Link Produk:</span>
                     </span>
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
                       <input
                         type="text"
                         readOnly
-                        value={selectedProductDetail.affiliate_url || 'Belum dibuat (Otomatis dibuat saat posting)'}
-                        className={`bg-slate-900 border text-[11px] rounded-lg px-2.5 py-1 w-48 sm:w-64 truncate outline-none ${
-                          selectedProductDetail.affiliate_url
-                            ? 'border-orange-500/40 text-orange-300'
-                            : 'border-slate-800 text-slate-500 italic'
-                        }`}
+                        value={selectedProductDetail.product_url || selectedProductDetail.affiliate_url || 'Tidak ada link'}
+                        className="bg-slate-900 border border-slate-800 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 flex-1 max-w-sm truncate outline-none select-all"
                       />
-                      {selectedProductDetail.affiliate_url && (
+                      {(selectedProductDetail.product_url || selectedProductDetail.affiliate_url) && (
                         <>
                           <button
-                            onClick={() => copyToClipboard('aff_url', selectedProductDetail.affiliate_url)}
-                            className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
-                            title="Salin Link Affiliate"
+                            onClick={() => copyToClipboard('prod_url', selectedProductDetail.product_url || selectedProductDetail.affiliate_url)}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 shrink-0"
+                            title="Salin Link Produk"
                           >
-                            {copiedId === 'aff_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedId === 'prod_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span className="text-[10px] font-semibold hidden sm:inline">{copiedId === 'prod_url' ? 'Tersalin' : 'Salin'}</span>
                           </button>
                           <a
-                            href={selectedProductDetail.affiliate_url}
+                            href={selectedProductDetail.product_url || selectedProductDetail.affiliate_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
-                            title="Buka Link Affiliate"
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center gap-1 shrink-0"
+                            title="Buka Produk di Shopee"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
+                            <ExternalLink className="w-3.5 h-3.5 text-orange-400" />
+                            <span className="text-[10px] font-semibold hidden sm:inline">Buka</span>
                           </a>
                         </>
                       )}
                     </div>
                   </div>
+
+                  {/* Affiliate Link (if already generated) */}
+                  {selectedProductDetail.affiliate_url && selectedProductDetail.affiliate_url !== selectedProductDetail.product_url && (
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                      <span className="text-indigo-400 font-medium flex items-center gap-1 shrink-0 text-[11px]">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Link Affiliate:</span>
+                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+                        <input
+                          type="text"
+                          readOnly
+                          value={selectedProductDetail.affiliate_url}
+                          className="bg-slate-900 border border-indigo-500/30 text-indigo-300 text-[11px] rounded-lg px-2.5 py-1 flex-1 max-w-sm truncate outline-none"
+                        />
+                        <button
+                          onClick={() => copyToClipboard('aff_url', selectedProductDetail.affiliate_url)}
+                          className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg shrink-0"
+                          title="Salin Link Affiliate"
+                        >
+                          {copiedId === 'aff_url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}
