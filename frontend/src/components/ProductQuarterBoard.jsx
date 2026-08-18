@@ -9,6 +9,7 @@ import {
   ArrowRight,
   TrendingUp,
   AlertCircle,
+  AlertTriangle,
   Eye,
   MousePointerClick,
   Award,
