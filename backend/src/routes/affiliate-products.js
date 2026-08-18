@@ -321,7 +321,7 @@ router.post('/bulk', async (req, res) => {
         title,
         price: rawPrice,
         product_url: cleanProductUrl,
-        affiliate_url,
+        affiliate_url: affiliateUrl,
         images,
         media
       });
