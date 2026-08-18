@@ -224,6 +224,67 @@ router.post('/:id/publish', async (req, res) => {
   }
 });
 
+// POST /api/posts/bulk-delete
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { ids, deleteAll, status } = req.body || {};
+
+    if (deleteAll) {
+      let query = db.collection('posts').where('user_id', '==', req.user.id);
+      if (status && status !== 'all') {
+        query = query.where('status', '==', status);
+      }
+      const snap = await query.get();
+      if (snap.empty) {
+        return res.json({ success: true, count: 0, message: 'Tidak ada postingan untuk dihapus.' });
+      }
+
+      const batches = [];
+      let currentBatch = db.batch();
+      let count = 0;
+
+      snap.docs.forEach((doc, idx) => {
+        currentBatch.delete(doc.ref);
+        count++;
+        if ((idx + 1) % 450 === 0) {
+          batches.push(currentBatch.commit());
+          currentBatch = db.batch();
+        }
+      });
+      batches.push(currentBatch.commit());
+      await Promise.all(batches);
+
+      return res.json({ success: true, count, message: `Berhasil menghapus ${count} postingan.` });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Daftar ID postingan wajib diisi.' });
+    }
+
+    const batches = [];
+    let currentBatch = db.batch();
+    let count = 0;
+
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const docRef = db.collection('posts').doc(id);
+      currentBatch.delete(docRef);
+      count++;
+      if ((i + 1) % 450 === 0) {
+        batches.push(currentBatch.commit());
+        currentBatch = db.batch();
+      }
+    }
+    batches.push(currentBatch.commit());
+    await Promise.all(batches);
+
+    res.json({ success: true, count, message: `Berhasil menghapus ${count} postingan terpilih.` });
+  } catch (err) {
+    console.error('Error bulk deleting posts:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/posts/:id
 router.delete('/:id', async (req, res) => {
   try {

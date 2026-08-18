@@ -16,6 +16,11 @@ import {
   Layers,
   AtSign,
   ChevronRight,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  ShieldAlert,
+  Check,
 } from 'lucide-react';
 
 export default function PostList() {
@@ -25,12 +30,19 @@ export default function PostList() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Multi-select & Bulk Delete State
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isDeleteAllMode, setIsDeleteAllMode] = useState(false);
+
   const fetchPosts = async () => {
     setLoading(true);
     try {
       const url = statusFilter === 'all' ? '/posts' : `/posts?status=${statusFilter}`;
       const res = await api.get(url);
       setPosts(res.data.posts || []);
+      setSelectedIds([]);
     } catch (err) {
       console.error('Gagal mengambil daftar postingan', err);
     } finally {
@@ -42,13 +54,61 @@ export default function PostList() {
     fetchPosts();
   }, [statusFilter]);
 
+  // Selection helpers
+  const isAllSelected = posts.length > 0 && selectedIds.length === posts.length;
+  const isSomeSelected = selectedIds.length > 0 && selectedIds.length < posts.length;
+
+  const toggleSelectPost = (id, e) => {
+    e?.stopPropagation();
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(posts.map(p => p.id));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  // Bulk Delete
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      if (isDeleteAllMode) {
+        const res = await api.post('/posts/bulk-delete', { deleteAll: true, status: statusFilter });
+        if (res.data.success) {
+          setPosts([]);
+          setSelectedIds([]);
+          setShowBulkDeleteModal(false);
+        }
+      } else {
+        const res = await api.post('/posts/bulk-delete', { ids: selectedIds });
+        if (res.data.success) {
+          setPosts(prev => prev.filter(p => !selectedIds.includes(p.id)));
+          setSelectedIds([]);
+          setShowBulkDeleteModal(false);
+        }
+      }
+    } catch (err) {
+      alert('Gagal menghapus postingan: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const handlePublishNow = async (id) => {
     setActionLoading(true);
     try {
       await api.post(`/posts/${id}/publish`);
       fetchPosts();
       if (selectedPost?.post?.id === id) {
-        // Refresh details modal
         fetchDetails(id);
       }
     } catch (err) {
@@ -63,6 +123,7 @@ export default function PostList() {
     try {
       await api.delete(`/posts/${id}`);
       setPosts(posts.filter((p) => p.id !== id));
+      setSelectedIds((prev) => prev.filter(item => item !== id));
       if (selectedPost?.post?.id === id) setSelectedPost(null);
     } catch (err) {
       alert('Gagal menghapus postingan.');
@@ -97,34 +158,60 @@ export default function PostList() {
           <p className="text-xs text-slate-400">Lihat, kelola, retry, atau publish manual postingan Anda</p>
         </div>
 
-        {/* Filter buttons */}
-        <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-2xl border border-slate-800 self-start sm:self-auto overflow-x-auto max-w-full">
-          {[
-            { id: 'all', label: 'Semua' },
-            { id: 'draft', label: 'Draft' },
-            { id: 'scheduled', label: 'Terjadwal' },
-            { id: 'posted', label: 'Posted' },
-            { id: 'failed', label: 'Gagal' },
-          ].map((tab) => (
+        {/* Filter & Select All buttons */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {posts.length > 0 && (
             <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                statusFilter === tab.id
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+              type="button"
+              onClick={handleToggleSelectAll}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                isAllSelected
+                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
+                  : isSomeSelected
+                  ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
               }`}
+              title={isAllSelected ? 'Batalkan Pilih Semua' : 'Pilih Semua'}
             >
-              {tab.label}
+              {isAllSelected ? (
+                <CheckSquare className="w-3.5 h-3.5 text-white" />
+              ) : isSomeSelected ? (
+                <MinusSquare className="w-3.5 h-3.5 text-indigo-400" />
+              ) : (
+                <Square className="w-3.5 h-3.5 text-slate-500" />
+              )}
+              <span>{isAllSelected ? 'Semua' : isSomeSelected ? `${selectedIds.length}` : 'Pilih Semua'}</span>
             </button>
-          ))}
-          <button
-            onClick={fetchPosts}
-            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors ml-1"
-            title="Muat Ulang"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          )}
+
+          <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-2xl border border-slate-800 overflow-x-auto max-w-full">
+            {[
+              { id: 'all', label: 'Semua' },
+              { id: 'draft', label: 'Draft' },
+              { id: 'scheduled', label: 'Terjadwal' },
+              { id: 'posted', label: 'Posted' },
+              { id: 'failed', label: 'Gagal' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                  statusFilter === tab.id
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+            <button
+              onClick={fetchPosts}
+              className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors ml-1"
+              title="Muat Ulang"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -139,19 +226,40 @@ export default function PostList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {posts.map((post) => {
+            const isSelected = selectedIds.includes(post.id);
             const badge = statusBadges[post.status] || statusBadges.draft;
+
             return (
               <div
                 key={post.id}
-                className="bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 rounded-3xl p-5 flex flex-col justify-between backdrop-blur-md transition-all hover:scale-[1.01]"
+                onClick={() => fetchDetails(post.id)}
+                className={`border rounded-3xl p-5 flex flex-col justify-between backdrop-blur-md transition-all cursor-pointer relative ${
+                  isSelected
+                    ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-950/20 shadow-xl shadow-indigo-500/20'
+                    : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:scale-[1.01]'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.color}`}>
-                      {badge.label}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => toggleSelectPost(post.id, e)}
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white border border-indigo-400'
+                            : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                        }`}
+                        title={isSelected ? 'Batalkan pilihan' : 'Pilih postingan ini'}
+                      >
+                        {isSelected ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <Square className="w-3.5 h-3.5 opacity-60" />}
+                      </button>
+                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.color}`}>
+                        {badge.label}
+                      </span>
+                    </div>
                     <span className="text-[10px] text-slate-500 font-medium">
-                      #{post.id} • {new Date(post.created_at).toLocaleDateString('id-ID')}
+                      #{post.id.slice(0, 7)} • {new Date(post.created_at).toLocaleDateString('id-ID')}
                     </span>
                   </div>
 
@@ -181,7 +289,10 @@ export default function PostList() {
                   )}
 
                   <button
-                    onClick={() => fetchDetails(post.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fetchDetails(post.id);
+                    }}
                     className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
                   >
                     <span>Detail</span>
@@ -191,6 +302,107 @@ export default function PostList() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Floating Bulk Actions Toolbar */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-3 px-5 py-3.5 rounded-2xl bg-slate-900/95 border border-indigo-500/50 shadow-2xl shadow-indigo-500/30 backdrop-blur-xl animate-in slide-in-from-bottom-5 duration-300 text-xs font-semibold text-white">
+          <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+            <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-extrabold text-xs shadow-sm">
+              {selectedIds.length}
+            </span>
+            <span className="text-slate-200">Postingan Terpilih</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleSelectAll}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-all"
+          >
+            {isAllSelected ? 'Batal Pilih Semua' : `Pilih Semua (${posts.length})`}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium transition-all"
+          >
+            Batalkan
+          </button>
+
+          <div className="h-4 w-px bg-slate-700 mx-1" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsDeleteAllMode(false);
+              setShowBulkDeleteModal(true);
+            }}
+            className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all active:scale-95"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Hapus Terpilih ({selectedIds.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsDeleteAllMode(true);
+              setShowBulkDeleteModal(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-800/80 text-red-300 text-xs font-medium transition-all"
+            title="Hapus semua postingan dalam filter ini"
+          >
+            <span>Hapus Semua ({statusFilter})</span>
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Delete Modal */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-red-500/40 rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-extrabold text-white">
+                {isDeleteAllMode ? `Hapus Semua Postingan (${statusFilter})?` : `Hapus ${selectedIds.length} Postingan Terpilih?`}
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {isDeleteAllMode
+                  ? `Tindakan ini akan menghapus seluruh ${posts.length} postingan dalam kategori '${statusFilter}' secara permanen.`
+                  : `Anda akan menghapus ${selectedIds.length} postingan yang dipilih dari database.`}
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => setShowBulkDeleteModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={handleBulkDelete}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-red-600/30 transition-all"
+              >
+                {isBulkDeleting ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{isBulkDeleting ? 'Menghapus...' : 'Ya, Hapus Sekarang'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -93,6 +93,42 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Helper to validate essential product fields
+function validateProductData(p) {
+  const errors = [];
+  
+  // 1. Judul Produk
+  const title = (p.title || '').trim();
+  if (!title || title.toLowerCase() === 'untitled product' || title.toLowerCase() === 'undefined' || title.toLowerCase() === 'null') {
+    errors.push('Judul produk kosong atau tidak valid.');
+  }
+
+  // 2. Link URL Produk / Toko
+  const url = (p.product_url || p.affiliate_url || '').trim();
+  if (!url || url === 'Not Available' || url === '-' || url === 'undefined' || url === 'null' || !url.startsWith('http')) {
+    errors.push('Link URL produk Shopee kosong atau tidak valid.');
+  }
+
+  // 3. Harga Produk
+  const price = typeof p.price === 'number' ? p.price : parsePriceNumber(p.price);
+  if (!price || price <= 0) {
+    errors.push('Harga produk harus lebih besar dari 0.');
+  }
+
+  // 4. Media Gambar
+  const hasImages = (Array.isArray(p.images) && p.images.length > 0) || 
+                    (Array.isArray(p.media) && p.media.some(m => m?.url && (m.type === 'image' || !m.type))) ||
+                    Boolean(p.image);
+  if (!hasImages) {
+    errors.push('Minimal harus memiliki 1 gambar/foto produk yang valid.');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
 // POST /api/affiliate-products
 // Create single product
 router.post('/', async (req, res) => {
@@ -118,8 +154,23 @@ router.post('/', async (req, res) => {
       notes = ''
     } = req.body || {};
 
-    if (!title || !String(title).trim()) {
-      return res.status(400).json({ success: false, error: 'Judul produk wajib diisi.' });
+    const cleanUrl = cleanShopeeProductUrl(String(product_url || ''));
+
+    // Validate essential product fields
+    const validation = validateProductData({
+      title,
+      price,
+      product_url: cleanUrl,
+      affiliate_url,
+      images,
+      media
+    });
+
+    if (!validation.isValid) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Data produk tidak lengkap: ${validation.errors.join(', ')}` 
+      });
     }
 
     // Build unified media array if not explicitly given
@@ -149,7 +200,7 @@ router.post('/', async (req, res) => {
       shop_name: String(shop_name || ''),
       shop_location: String(shop_location || ''),
       category: String(category || 'Umum'),
-      product_url: cleanShopeeProductUrl(String(product_url || '')),
+      product_url: cleanUrl,
       affiliate_url: String(affiliate_url || ''),
       description: String(description || ''),
       images: Array.isArray(images) ? images : [],
@@ -193,6 +244,7 @@ router.post('/bulk', async (req, res) => {
     });
 
     const savedProducts = [];
+    const skippedItems = [];
     const batch = db.batch();
     const now = new Date().toISOString();
 
@@ -201,7 +253,7 @@ router.post('/bulk', async (req, res) => {
       const formatted = rawItem.formatted || rawItem.rawFormatted || rawItem;
       const raw = rawItem.raw || {};
 
-      const title = formatted['Product Name'] || rawItem.title || raw.name || raw.title || 'Untitled Product';
+      const title = formatted['Product Name'] || rawItem.title || raw.name || raw.title || '';
       const rawPrice = formatted['Price'] || rawItem.price || raw.price || 0;
       const rawOrigPrice = formatted['Price Before Discount'] || rawItem.original_price || raw.price_before_discount || null;
       const discount = formatted['Discount'] || rawItem.discount || '';
@@ -262,6 +314,26 @@ router.post('/bulk', async (req, res) => {
         });
       }
 
+      const cleanProductUrl = cleanShopeeProductUrl(String(productUrl || ''));
+
+      // Validate essential data completeness
+      const validation = validateProductData({
+        title,
+        price: rawPrice,
+        product_url: cleanProductUrl,
+        affiliate_url,
+        images,
+        media
+      });
+
+      if (!validation.isValid) {
+        skippedItems.push({
+          title: title || 'Item Tanpa Judul',
+          reasons: validation.errors
+        });
+        continue; // Lewati produk yang tidak lengkap
+      }
+
       // Variants
       let variants = [];
       if (Array.isArray(rawItem.variants) && rawItem.variants.length > 0) {
@@ -283,7 +355,6 @@ router.post('/bulk', async (req, res) => {
         notes = `Diimpor otomatis dari Shopee Scraper${brand ? ` - Brand: ${brand}` : ''}`;
       }
 
-      const cleanProductUrl = cleanShopeeProductUrl(String(productUrl || ''));
       const existingDocId = cleanProductUrl ? existingUrlMap.get(cleanProductUrl) : null;
       
       const docRef = existingDocId 
@@ -323,16 +394,81 @@ router.post('/bulk', async (req, res) => {
       if (cleanProductUrl) existingUrlMap.set(cleanProductUrl, docRef.id);
     }
 
-    await batch.commit();
+    if (savedProducts.length > 0) {
+      await batch.commit();
+    }
 
     res.status(201).json({
       success: true,
-      message: `Berhasil menyinkronkan ${savedProducts.length} produk ke Produk Affiliate.`,
+      message: `Berhasil mengimpor ${savedProducts.length} produk.${skippedItems.length > 0 ? ` (${skippedItems.length} produk dilewati karena data tidak lengkap)` : ''}`,
       imported_count: savedProducts.length,
+      skipped_count: skippedItems.length,
+      skipped_reasons: skippedItems.slice(0, 10),
       products: savedProducts
     });
   } catch (err) {
     console.error('Error bulk importing products:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/affiliate-products/bulk-delete
+// Batch delete multiple products or all products for user
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { ids, deleteAll } = req.body || {};
+
+    if (deleteAll) {
+      const snap = await db.collection('affiliate_products')
+        .where('user_id', '==', req.user.id)
+        .get();
+
+      if (snap.empty) {
+        return res.json({ success: true, count: 0, message: 'Tidak ada produk untuk dihapus.' });
+      }
+
+      const batches = [];
+      let currentBatch = db.batch();
+      let count = 0;
+
+      snap.docs.forEach((doc, idx) => {
+        currentBatch.delete(doc.ref);
+        count++;
+        if ((idx + 1) % 450 === 0) {
+          batches.push(currentBatch.commit());
+          currentBatch = db.batch();
+        }
+      });
+      batches.push(currentBatch.commit());
+      await Promise.all(batches);
+
+      return res.json({ success: true, count, message: `Berhasil menghapus ${count} produk.` });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Daftar ID produk wajib diisi.' });
+    }
+
+    const batches = [];
+    let currentBatch = db.batch();
+    let count = 0;
+
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const docRef = db.collection('affiliate_products').doc(id);
+      currentBatch.delete(docRef);
+      count++;
+      if ((i + 1) % 450 === 0) {
+        batches.push(currentBatch.commit());
+        currentBatch = db.batch();
+      }
+    }
+    batches.push(currentBatch.commit());
+    await Promise.all(batches);
+
+    res.json({ success: true, count, message: `Berhasil menghapus ${count} produk terpilih.` });
+  } catch (err) {
+    console.error('Error bulk deleting products:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

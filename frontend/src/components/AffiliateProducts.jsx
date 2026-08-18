@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Share2,
   Trash2,
+  Trash,
   Edit3,
   Film,
   Image as ImageIcon,
@@ -33,13 +34,24 @@ import {
   Store,
   ArrowUpDown,
   RefreshCw,
-  FolderDown
+  FolderDown,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  ShieldAlert,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Multi-select & Bulk Action State
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isDeleteAllMode, setIsDeleteAllMode] = useState(false);
 
   // Search, Filter & Sort State
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,6 +116,67 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
     fetchProducts();
   };
 
+  // Live Counts for filters
+  const videoCount = useMemo(() => {
+    return products.filter(p => (p.videos && p.videos.length > 0) || Boolean(p.product_video) || p.media?.some(m => m.type === 'video')).length;
+  }, [products]);
+
+  const imageOnlyCount = useMemo(() => {
+    return products.length - videoCount;
+  }, [products, videoCount]);
+
+  // Toggle single item selection
+  const toggleSelectProduct = (id, e) => {
+    e?.stopPropagation();
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  // Selection helpers
+  const isAllSelected = products.length > 0 && selectedIds.length === products.length;
+  const isSomeSelected = selectedIds.length > 0 && selectedIds.length < products.length;
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(products.map(p => p.id));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  // Bulk Delete Execution
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      if (isDeleteAllMode) {
+        const res = await api.post('/affiliate-products/bulk-delete', { deleteAll: true });
+        if (res.data.success) {
+          showToast(`Berhasil menghapus seluruh katalog (${res.data.count} produk)!`);
+          setProducts([]);
+          setSelectedIds([]);
+          setShowBulkDeleteModal(false);
+        }
+      } else {
+        const res = await api.post('/affiliate-products/bulk-delete', { ids: selectedIds });
+        if (res.data.success) {
+          showToast(`Berhasil menghapus ${selectedIds.length} produk!`);
+          setProducts(prev => prev.filter(p => !selectedIds.includes(p.id)));
+          setSelectedIds([]);
+          setShowBulkDeleteModal(false);
+        }
+      }
+    } catch (err) {
+      alert('Gagal menghapus produk: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   // Categories list extracted from data
   const categoriesList = useMemo(() => {
     const cats = new Set(['all']);
@@ -134,6 +207,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
     try {
       await api.delete(`/affiliate-products/${id}`);
       setProducts((prev) => prev.filter((p) => p.id !== id));
+      setSelectedIds((prev) => prev.filter(item => item !== id));
       if (selectedProductDetail?.id === id) {
         setSelectedProductDetail(null);
       }
@@ -388,7 +462,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
         </div>
       </div>
 
-      {/* Search, Filter & View Controls */}
+      {/* Search, Filter, Select All & View Controls */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         {/* Search Bar */}
         <form onSubmit={handleSearchSubmit} className="relative flex-1 min-w-[240px]">
@@ -416,8 +490,33 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
           )}
         </form>
 
-        {/* Filter Badges & Selects */}
+        {/* Filter Badges, Select All & Selects */}
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Select All Button */}
+          {products.length > 0 && (
+            <button
+              type="button"
+              onClick={handleToggleSelectAll}
+              className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
+                isAllSelected
+                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                  : isSomeSelected
+                  ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-300'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+              title={isAllSelected ? 'Batalkan Pilih Semua' : 'Pilih Semua Produk'}
+            >
+              {isAllSelected ? (
+                <CheckSquare className="w-4 h-4 text-white" />
+              ) : isSomeSelected ? (
+                <MinusSquare className="w-4 h-4 text-indigo-400" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-500" />
+              )}
+              <span>{isAllSelected ? 'Semua Terpilih' : isSomeSelected ? `${selectedIds.length} Terpilih` : 'Pilih Semua'}</span>
+            </button>
+          )}
+
           {/* Media Type Filter */}
           <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
             <button
@@ -428,7 +527,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Semua Media
+              Semua ({products.length})
             </button>
             <button
               onClick={() => setSelectedMediaType('video')}
@@ -439,7 +538,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
               }`}
             >
               <Film className="w-3.5 h-3.5 text-orange-400" />
-              <span>Ada Video</span>
+              <span>Video ({videoCount})</span>
             </button>
             <button
               onClick={() => setSelectedMediaType('image')}
@@ -450,7 +549,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
               }`}
             >
               <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Foto Saja</span>
+              <span>Foto Saja ({imageOnlyCount})</span>
             </button>
           </div>
 
@@ -537,6 +636,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
         /* GRID CARDS VIEW */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {products.map((product) => {
+            const isSelected = selectedIds.includes(product.id);
             const hasVideo = (product.videos && product.videos.length > 0) || Boolean(product.product_video);
             const coverImage = product.images?.[0] || product.media?.[0]?.url || 'https://via.placeholder.com/300?text=No+Image';
             const isGeneratingAff = generatingAffiliateForId === product.id;
@@ -545,7 +645,11 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
               <div
                 key={product.id}
                 onClick={() => openDetailModal(product)}
-                className="group bg-slate-900/70 hover:bg-slate-900 border border-slate-800/80 hover:border-indigo-500/50 rounded-3xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/10 flex flex-col justify-between cursor-pointer relative"
+                className={`group border rounded-3xl overflow-hidden transition-all duration-300 flex flex-col justify-between cursor-pointer relative ${
+                  isSelected
+                    ? 'ring-2 ring-indigo-500 border-indigo-500 bg-indigo-950/20 shadow-2xl shadow-indigo-500/20'
+                    : 'bg-slate-900/70 hover:bg-slate-900 border-slate-800/80 hover:border-indigo-500/50 hover:shadow-2xl hover:shadow-indigo-500/10'
+                }`}
               >
                 {/* Media Thumbnail Box */}
                 <div className="relative aspect-square w-full bg-slate-950 overflow-hidden">
@@ -562,24 +666,43 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                   {/* Gradient Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30 pointer-events-none" />
 
-                  {/* Top Badges */}
-                  <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-1 pointer-events-none">
-                    {/* Media Indicator */}
-                    <div className="flex items-center gap-1.5">
-                      {hasVideo && (
-                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-600/90 text-white text-[10px] font-bold shadow-md backdrop-blur-md">
-                          <Film className="w-3 h-3" />
-                          <span>VIDEO</span>
-                        </span>
+                  {/* Checkbox Selector (Top-Left) */}
+                  <div
+                    className="absolute top-3 left-3 z-10"
+                    onClick={(e) => toggleSelectProduct(product.id, e)}
+                  >
+                    <button
+                      type="button"
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all shadow-lg backdrop-blur-md ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border border-indigo-400 scale-105'
+                          : 'bg-slate-950/70 hover:bg-slate-900 text-slate-400 hover:text-white border border-slate-700/60'
+                      }`}
+                      title={isSelected ? 'Batalkan pilihan' : 'Pilih produk ini'}
+                    >
+                      {isSelected ? (
+                        <Check className="w-4 h-4 stroke-[3]" />
+                      ) : (
+                        <Square className="w-4 h-4 opacity-70" />
                       )}
-                      {product.images && product.images.length > 1 && (
-                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/80 text-slate-200 text-[10px] font-bold shadow-md backdrop-blur-md border border-slate-700/50">
-                          <ImageIcon className="w-3 h-3 text-indigo-400" />
-                          <span>{product.images.length} Foto</span>
-                        </span>
-                      )}
-                    </div>
+                    </button>
+                  </div>
 
+                  {/* Top-Right Badges */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 pointer-events-none">
+                    {/* Media Indicator */}
+                    {hasVideo && (
+                      <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-600/90 text-white text-[10px] font-bold shadow-md backdrop-blur-md">
+                        <Film className="w-3 h-3" />
+                        <span>VIDEO</span>
+                      </span>
+                    )}
+                    {product.images && product.images.length > 1 && (
+                      <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/80 text-slate-200 text-[10px] font-bold shadow-md backdrop-blur-md border border-slate-700/50">
+                        <ImageIcon className="w-3 h-3 text-indigo-400" />
+                        <span>{product.images.length} Foto</span>
+                      </span>
+                    )}
                     {/* Discount Badge */}
                     {product.discount && (
                       <span className="px-2 py-1 rounded-lg bg-red-600 text-white text-[10px] font-extrabold shadow-md">
@@ -608,16 +731,26 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                 {/* Card Body */}
                 <div className="p-4 flex-1 flex flex-col justify-between gap-3">
                   <div>
-                    {/* Store Info */}
-                    {product.shop_name && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-                        <Store className="w-3 h-3 text-orange-400" />
-                        <span className="font-semibold truncate text-slate-300">{product.shop_name}</span>
-                        {product.shop_location && (
-                          <span className="text-slate-500 text-[10px] truncate">• {product.shop_location}</span>
-                        )}
-                      </div>
-                    )}
+                    {/* Store Info & Link Status */}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      {product.shop_name ? (
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 min-w-0">
+                          <Store className="w-3 h-3 text-orange-400 shrink-0" />
+                          <span className="font-semibold truncate text-slate-300">{product.shop_name}</span>
+                        </div>
+                      ) : <span />}
+
+                      {product.affiliate_url ? (
+                        <span className="shrink-0 px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Link Siap</span>
+                        </span>
+                      ) : (
+                        <span className="shrink-0 px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/50 text-[10px] font-medium">
+                          Belum Ada Link
+                        </span>
+                      )}
+                    </div>
 
                     {/* Product Title */}
                     <h3 className="text-xs font-bold text-slate-100 line-clamp-2 leading-relaxed group-hover:text-indigo-300 transition-colors">
@@ -692,16 +825,34 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] font-bold tracking-wider border-b border-slate-800">
                 <tr>
+                  <th className="p-4 w-12 text-center">
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAll}
+                      className="p-1 hover:text-white transition-colors"
+                      title={isAllSelected ? 'Batalkan pilih semua' : 'Pilih semua'}
+                    >
+                      {isAllSelected ? (
+                        <CheckSquare className="w-4 h-4 text-indigo-400" />
+                      ) : isSomeSelected ? (
+                        <MinusSquare className="w-4 h-4 text-indigo-400" />
+                      ) : (
+                        <Square className="w-4 h-4 text-slate-500" />
+                      )}
+                    </button>
+                  </th>
                   <th className="p-4">Produk</th>
                   <th className="p-4">Harga</th>
                   <th className="p-4">Toko & Lokasi</th>
                   <th className="p-4">Media</th>
+                  <th className="p-4">Status Link</th>
                   <th className="p-4">Rating / Terjual</th>
                   <th className="p-4 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {products.map((product) => {
+                  const isSelected = selectedIds.includes(product.id);
                   const coverImage = product.images?.[0] || product.media?.[0]?.url || 'https://via.placeholder.com/100?text=No+Img';
                   const isGeneratingAff = generatingAffiliateForId === product.id;
 
@@ -709,8 +860,23 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                     <tr
                       key={product.id}
                       onClick={() => openDetailModal(product)}
-                      className="hover:bg-slate-800/40 cursor-pointer transition-colors"
+                      className={`hover:bg-slate-800/40 cursor-pointer transition-colors ${
+                        isSelected ? 'bg-indigo-950/30' : ''
+                      }`}
                     >
+                      <td className="p-4 text-center" onClick={(e) => toggleSelectProduct(product.id, e)}>
+                        <button
+                          type="button"
+                          className="p-1 hover:text-white transition-colors"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-600" />
+                          )}
+                        </button>
+                      </td>
+
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <img
@@ -756,6 +922,19 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                             {product.images?.length || 0} Foto
                           </span>
                         </div>
+                      </td>
+
+                      <td className="p-4">
+                        {product.affiliate_url ? (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Link Siap</span>
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/50 text-[10px] font-medium">
+                            Belum Ada Link
+                          </span>
+                        )}
                       </td>
 
                       <td className="p-4">
@@ -806,8 +985,109 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
       )}
 
       {/* ========================================================================= */}
-      {/* RICH DETAIL MODAL                                                        */}
+      {/* FLOATING BULK ACTIONS TOOLBAR                                             */}
       {/* ========================================================================= */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-3 px-5 py-3.5 rounded-2xl bg-slate-900/95 border border-indigo-500/50 shadow-2xl shadow-indigo-500/30 backdrop-blur-xl animate-in slide-in-from-bottom-5 duration-300 text-xs font-semibold text-white">
+          <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+            <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-extrabold text-xs shadow-sm">
+              {selectedIds.length}
+            </span>
+            <span className="text-slate-200">Produk Terpilih</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleSelectAll}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-all"
+          >
+            {isAllSelected ? 'Batal Pilih Semua' : `Pilih Semua (${products.length})`}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium transition-all"
+          >
+            Batalkan
+          </button>
+
+          <div className="h-4 w-px bg-slate-700 mx-1" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsDeleteAllMode(false);
+              setShowBulkDeleteModal(true);
+            }}
+            className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all active:scale-95"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Hapus Terpilih ({selectedIds.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsDeleteAllMode(true);
+              setShowBulkDeleteModal(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-800/80 text-red-300 text-xs font-medium transition-all"
+            title="Hapus seluruh produk di katalog"
+          >
+            <span>Hapus Semua Katalog</span>
+          </button>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* BULK DELETE CONFIRMATION MODAL                                            */}
+      {/* ========================================================================= */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-md bg-slate-900 border border-red-500/40 rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-extrabold text-white">
+                {isDeleteAllMode ? 'Hapus Seluruh Katalog Produk?' : `Hapus ${selectedIds.length} Produk Terpilih?`}
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {isDeleteAllMode
+                  ? `Tindakan ini akan menghapus seluruh ${products.length} produk di katalog Anda secara permanen. Tindakan ini tidak dapat dibatalkan.`
+                  : `Anda akan menghapus ${selectedIds.length} produk yang dipilih dari database secara permanen.`}
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => setShowBulkDeleteModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={handleBulkDelete}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-red-600/30 transition-all"
+              >
+                {isBulkDeleting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{isBulkDeleting ? 'Menghapus...' : 'Ya, Hapus Sekarang'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {selectedProductDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md overflow-y-auto animate-in fade-in">
           <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
