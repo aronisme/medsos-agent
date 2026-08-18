@@ -27,11 +27,31 @@ export default function ProductMemoryModal({ product, onClose, onRefresh }) {
   const [decisions, setDecisions] = useState([]);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnosisResult, setDiagnosisResult] = useState(null);
+  const [productUrl, setProductUrl] = useState(product?.product_url || product?.affiliate_url || '');
+  const [savingUrl, setSavingUrl] = useState(false);
+  const [urlSaved, setUrlSaved] = useState(false);
 
   useEffect(() => {
     if (!product?.id) return;
+    setProductUrl(product?.product_url || product?.affiliate_url || '');
     fetchMemory();
   }, [product]);
+
+  const handleSaveProductUrl = async () => {
+    if (!productUrl.trim()) return;
+    try {
+      setSavingUrl(true);
+      await api.put(`/affiliate-products/${product.id}`, { product_url: productUrl.trim() });
+      setUrlSaved(true);
+      setTimeout(() => setUrlSaved(false), 3000);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Error saving product URL:', err);
+    } finally {
+      setSavingUrl(false);
+    }
+  };
+
 
   const fetchMemory = async () => {
     try {
@@ -116,7 +136,46 @@ export default function ProductMemoryModal({ product, onClose, onRefresh }) {
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
 
+          {/* Product URL Input & Verification Banner */}
+          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex-1 min-w-0 w-full">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider">
+                  Link Asal Produk Shopee
+                </span>
+                {(!productUrl || !productUrl.startsWith('http')) ? (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>Wajib Diisi untuk Pembuatan Link Affiliate</span>
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Link Valid</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 w-full">
+                <input
+                  type="text"
+                  value={productUrl}
+                  onChange={(e) => setProductUrl(e.target.value)}
+                  placeholder="https://shopee.co.id/product/..."
+                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={handleSaveProductUrl}
+                  disabled={savingUrl || !productUrl.trim()}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shrink-0 transition-all disabled:opacity-50"
+                >
+                  {savingUrl ? 'Menyimpan...' : urlSaved ? 'Tersimpan ✓' : 'Simpan Link'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Product Profile & Intelligence Card */}
+
           {product.agent_profile && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80">

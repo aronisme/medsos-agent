@@ -249,12 +249,22 @@ export default function ProductQuarterBoard() {
                               <span className="text-xs text-emerald-400 font-extrabold">
                                 Rp {Number(prod.price || 0).toLocaleString('id-ID')}
                               </span>
-                              {prod.discount && (
+                              {prod.discount ? (
                                 <span className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 px-1.5 py-0.5 rounded">
                                   {prod.discount}
                                 </span>
-                              )}
+                              ) : null}
                             </div>
+                            
+                            {/* Peringatan jika Link Produk Kosong */}
+                            {(!prod.product_url && !prod.affiliate_url) && (
+                              <div className="mt-1.5">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded-md">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>Link Kosong</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -266,6 +276,7 @@ export default function ProductQuarterBoard() {
                             {summary.total_clicks || 0} Klik
                           </span>
                         </div>
+
                       </div>
                     );
                   })

@@ -118,6 +118,26 @@ async function createPostShortlink(product, platform, userId) {
 }
 
 /**
+ * Helper untuk memvalidasi dan merekonstruksi URL produk Shopee yang sah
+ */
+function getValidShopeeProductUrl(product) {
+  if (!product) return null;
+  let url = String(product.product_url || product.affiliate_url || '').trim();
+  
+  if (url && (url.startsWith('http://') || url.startsWith('https://')) && url !== 'https://shopee.co.id') {
+    return url;
+  }
+  
+  const itemId = product.item_id || product.raw_item_id;
+  const shopId = product.shop_id || product.raw_shop_id || 0;
+  if (itemId && itemId !== 'undefined') {
+    return `https://shopee.co.id/product/${shopId}/${itemId}`;
+  }
+  
+  return null;
+}
+
+/**
  * Menjalankan 1 Putaran Siklus Otonom (Autonomous Execution Cycle)
  * @param {string} userId - ID User
  * @param {Object} [opts] - { forceRun: boolean, maxPostsToSchedule: number }
@@ -162,7 +182,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       return { success: false, message: 'Tidak ada akun Facebook atau Threads aktif (Instagram dinonaktifkan untuk link caption).', log: logSteps };
     }
 
-    // 3. PHASE 3: Inventory Classification & Dynamic Quota
+    // 3. PHASE 3: Inventory Classification & Strict Link Validation
     const productsSnap = await db.collection('affiliate_products')
       .where('user_id', '==', userId)
       .get();
@@ -173,16 +193,40 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       return { success: true, message: 'Katalog produk kosong.', log: logSteps };
     }
 
+    // Filter KETAT: Pastikan HANYA produk dengan link sah yang dipilih!
+    const validProducts = [];
+    let missingLinkCount = 0;
+
+    for (const p of allProducts) {
+      const validUrl = getValidShopeeProductUrl(p);
+      if (validUrl) {
+        p.product_url = validUrl;
+        validProducts.push(p);
+      } else {
+        missingLinkCount++;
+      }
+    }
+
+    if (missingLinkCount > 0) {
+      logSteps.push(`⚠️ Proteksi Link: Mengabaikan ${missingLinkCount} produk karena link produk kosong / tidak valid.`);
+    }
+
+    if (validProducts.length === 0) {
+      logSteps.push('Semua produk di katalog belum memiliki Link Shopee yang valid. Silakan periksa tab Produk Affiliate.');
+      return { success: false, message: 'Semua produk tidak memiliki link produk yang valid.', log: logSteps };
+    }
+
     // Klasifikasikan produk berdasarkan status
     const pools = {
-      new: allProducts.filter(p => !p.lifecycle_status || p.lifecycle_status === 'NEW'),
-      testing: allProducts.filter(p => p.lifecycle_status === 'TESTING'),
-      promising: allProducts.filter(p => p.lifecycle_status === 'PROMISING'),
-      proven: allProducts.filter(p => p.lifecycle_status === 'PROVEN' || p.lifecycle_status === 'SCALING'),
-      stopped: allProducts.filter(p => p.lifecycle_status === 'STOPPED' || p.quarterly_status?.status === 'stopped_for_quarter')
+      new: validProducts.filter(p => !p.lifecycle_status || p.lifecycle_status === 'NEW'),
+      testing: validProducts.filter(p => p.lifecycle_status === 'TESTING'),
+      promising: validProducts.filter(p => p.lifecycle_status === 'PROMISING'),
+      proven: validProducts.filter(p => p.lifecycle_status === 'PROVEN' || p.lifecycle_status === 'SCALING'),
+      stopped: validProducts.filter(p => p.lifecycle_status === 'STOPPED' || p.quarterly_status?.status === 'stopped_for_quarter')
     };
 
-    logSteps.push(`Inventori: ${pools.new.length} Baru, ${pools.testing.length} Sedang Diuji, ${pools.promising.length} Menjanjikan, ${pools.proven.length} Pemenang, ${pools.stopped.length} Di-Stop.`);
+    logSteps.push(`Inventori Valid: ${pools.new.length} Baru, ${pools.testing.length} Sedang Diuji, ${pools.promising.length} Menjanjikan, ${pools.proven.length} Pemenang, ${pools.stopped.length} Di-Stop.`);
+
 
     // 4. PHASE 4: Jalankan Diagnosis untuk Produk yang Mengalami Masalah
     for (const prod of pools.testing) {
