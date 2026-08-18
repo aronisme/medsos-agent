@@ -93,6 +93,51 @@ async function publishMedia(threadsUserId, token, creationId) {
 }
 
 /**
+ * Memastikan teks untuk Threads tidak pernah melebihi batas 500 karakter Meta API.
+ * Menjaga link afiliasi & hook tetap utuh.
+ */
+function formatThreadsText(text = '', maxLen = 495) {
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+
+  // Cari URL di dalam teks (terutama shortlink / CTA link)
+  const urlMatch = trimmed.match(/(https?:\/\/[^\s]+)/i);
+  const foundUrl = urlMatch ? urlMatch[0] : '';
+
+  if (foundUrl) {
+    const urlIndex = trimmed.indexOf(foundUrl);
+    const beforeUrl = trimmed.substring(0, urlIndex).trim();
+    const afterUrl = trimmed.substring(urlIndex + foundUrl.length).trim();
+
+    const urlPart = `\n\n${foundUrl}`;
+    const remainingBudget = maxLen - urlPart.length - (afterUrl ? 15 : 0);
+
+    let trimmedBefore = beforeUrl;
+    if (trimmedBefore.length > remainingBudget) {
+      const lines = trimmedBefore.split('\n');
+      let accumulated = '';
+      for (const line of lines) {
+        if ((accumulated + '\n' + line).length <= remainingBudget - 5) {
+          accumulated += (accumulated ? '\n' : '') + line;
+        } else {
+          break;
+        }
+      }
+      trimmedBefore = accumulated || trimmedBefore.substring(0, remainingBudget - 3) + '...';
+    }
+
+    let finalPost = `${trimmedBefore}${urlPart}`;
+    if (afterUrl && finalPost.length + afterUrl.length + 2 <= maxLen) {
+      finalPost += `\n\n${afterUrl}`;
+    }
+    return finalPost.slice(0, maxLen).trim();
+  }
+
+  return trimmed.substring(0, maxLen - 3).trim() + '...';
+}
+
+/**
  * Orkestrasi posting ke Meta Threads Account.
  * Mendukung: text, single image, single video, carousel (multi-gambar/video), reply, & quote post.
  * @param {{page_id:string, access_token:string}} account
@@ -113,8 +158,11 @@ async function postToThreads(account, content, media = [], options = {}) {
   const token = account.access_token;
   const { replyToId, quotePostId } = options;
 
+  // Sanitasi panjang teks agar selalu mematuhi batas 500 karakter Threads API
+  const formattedContent = formatThreadsText(content, 495);
+
   // Jika tidak ada konten dan tidak ada media, tidak bisa post.
-  if (!content && normalizedMedia.length === 0) {
+  if (!formattedContent && normalizedMedia.length === 0) {
     throw new Error('Postingan Threads wajib memiliki teks, gambar, atau video.');
   }
 
@@ -123,7 +171,7 @@ async function postToThreads(account, content, media = [], options = {}) {
   if (normalizedMedia.length === 0) {
     // Postingan Teks saja
     creationId = await createMediaContainer(threadsUserId, token, {
-      text: content,
+      text: formattedContent,
       replyToId,
       quotePostId,
     });
@@ -132,7 +180,7 @@ async function postToThreads(account, content, media = [], options = {}) {
     const m = normalizedMedia[0];
     const isVideo = m.media_type === 'video';
     creationId = await createMediaContainer(threadsUserId, token, {
-      text: content,
+      text: formattedContent,
       imageUrl: isVideo ? undefined : m.media_url,
       videoUrl: isVideo ? m.media_url : undefined,
       replyToId,
@@ -154,7 +202,7 @@ async function postToThreads(account, content, media = [], options = {}) {
     for (const childId of childIds) {
       await waitForMediaReady(token, childId);
     }
-    creationId = await createCarouselContainer(threadsUserId, token, childIds, content, { replyToId, quotePostId });
+    creationId = await createCarouselContainer(threadsUserId, token, childIds, formattedContent, { replyToId, quotePostId });
   }
 
   // Jika mengirim media (single / parent container), tunggu hingga FINISHED

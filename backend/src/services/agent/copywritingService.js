@@ -14,7 +14,7 @@ ATURAN WAJIB PENULISAN:
    - Sesi Malam (19:00 - 21:00 WIB): Gaya bahasa santai waktu rebahan malam / santai santai / waktu checkout Shopee.
 4. Sesuaikan tone berdasarkan platform:
    - Facebook: Storytelling mengalir, relatable, emosional, informasi harga & promo jelas.
-   - Threads: Punchy, to-the-point, santai seperti obrolan teman, direct hook 1-2 baris.
+   - Threads: WAJIB SANGAT RINGKAS (Maksimal 300-350 karakter total karena batas Threads API 500 karakter)! Punchy, to-the-point, santai seperti obrolan teman, direct hook 1 baris, maksimal 2 bullet point pendek, dan 2-3 hashtag saja.
 
 Keluarkan output HANYA dalam format JSON valid tanpa teks pengantar:
 {
@@ -119,11 +119,16 @@ async function generatePostContent({
     const priceText = `Rp ${Number(product.price || 0).toLocaleString('id-ID')}`;
     const discountText = product.discount ? `(${product.discount})` : '';
 
+    // Untuk Threads, persingkat nama produk agar tidak memakan limit 500 karakter
+    const productName = platform === 'threads'
+      ? cleanCaptionText(product.title).slice(0, 45).trim()
+      : cleanCaptionText(product.title);
+
     // 3. Rakit Placeholder Template
     const rawFilledCaption = fillTemplatePlaceholders(template.structure, {
       hook: cleanCaptionText(parsedCopy.hook),
       pain_point: cleanCaptionText(parsedCopy.pain_point_text),
-      product_name: cleanCaptionText(product.title),
+      product_name: productName,
       price_discount: `${priceText} ${discountText}`.trim(),
       discount: product.discount || 'Spesial Promo',
       usp_bullets: cleanCaptionText(parsedCopy.usp_bullets),
@@ -131,7 +136,22 @@ async function generatePostContent({
       hashtags: parsedCopy.hashtags,
     });
 
-    const filledCaption = cleanCaptionText(rawFilledCaption);
+    let filledCaption = cleanCaptionText(rawFilledCaption);
+
+    // Khusus Threads: Pangkas otomatis jika melebihi 480 karakter agar 100% aman di Meta Threads API
+    if (platform === 'threads' && filledCaption.length > 480) {
+      const cta = shortlinkUrl || product.affiliate_url || product.product_url || '';
+      const ctaIndex = filledCaption.indexOf(cta);
+      if (ctaIndex !== -1) {
+        const beforeCta = filledCaption.slice(0, ctaIndex).trim();
+        const afterCta = filledCaption.slice(ctaIndex + cta.length).trim();
+        const maxBeforeLen = 480 - cta.length - 20 - (afterCta ? afterCta.length : 0);
+        const trimmedBefore = beforeCta.slice(0, Math.max(maxBeforeLen, 100)).trim();
+        filledCaption = `${trimmedBefore}\n\n${cta}${afterCta ? `\n\n${afterCta}` : ''}`.slice(0, 480).trim();
+      } else {
+        filledCaption = filledCaption.slice(0, 475) + '...';
+      }
+    }
 
     // 4. Hitung Content Fingerprint
     const fingerprint = generateContentFingerprint({
