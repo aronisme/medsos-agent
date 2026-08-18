@@ -207,6 +207,8 @@ router.post('/bulk', async (req, res) => {
 
       const ratingStar = formatted['Rating Star'] || rawItem.rating || raw.item_rating?.rating_star || 5.0;
       const soldCount = formatted['Sold Count'] || formatted['Historical Sold'] || rawItem.sold_count || raw.sold || raw.historical_sold || '';
+      const shopName = rawItem.shop_name || formatted['Shop Name'] || raw.shop_name || raw.shop_data?.shop_name || raw.shop_info?.shop_name || '';
+      const shopLocation = rawItem.shop_location || formatted['Shop Location'] || raw.shop_location || raw.shop_data?.shop_location || raw.shop_info?.shop_location || '';
 
       const rawItemId = formatted['Item ID'] || rawItem.id || rawItem.item_id || raw.itemid || raw.item_id || '';
       const rawShopId = formatted['Shop ID'] || rawItem.shop_id || raw.shopid || raw.shop_id || raw.shop_data?.shop_id || '';
