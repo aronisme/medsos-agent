@@ -10,7 +10,6 @@ import AccountManager from './components/AccountManager';
 import TemplateManager from './components/TemplateManager';
 import ApiDocumentation from './components/ApiDocumentation';
 import AffiliateGenerator from './components/AffiliateGenerator';
-import ShopeeExtractor from './components/ShopeeExtractor';
 import AffiliateProducts from './components/AffiliateProducts';
 import api from './api/client';
 
@@ -72,24 +71,6 @@ export default function App() {
             <AffiliateProducts
               onSendToComposer={(data) => {
                 setComposerInitialData(data);
-                setActiveTab('composer');
-              }}
-              onSendToAffiliate={(canonicalUrl) => {
-                setAffiliateInitialUrl(canonicalUrl);
-                setActiveTab('shopee_affiliate');
-              }}
-            />
-          )}
-
-          {activeTab === 'shopee_extractor' && (
-            <ShopeeExtractor
-              onSendToComposer={(productInfo) => {
-                setComposerInitialData({
-                  title: productInfo.title,
-                  content: `🔥 REKOMENDASI PRODUK 🔥\n\n${productInfo.title}\n\nHarga: Rp ${productInfo.price?.toLocaleString('id-ID')}\n\n👉 Cek dan beli di sini:\n${productInfo.url}`,
-                  image: productInfo.image,
-                  mediaType: 'image'
-                });
                 setActiveTab('composer');
               }}
               onSendToAffiliate={(canonicalUrl) => {
