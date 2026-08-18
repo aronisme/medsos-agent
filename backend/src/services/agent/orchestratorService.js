@@ -9,22 +9,26 @@ const { synthesizeKnowledge, getActiveKnowledgeInsights } = require('./knowledge
 const { logAgentDecision } = require('./decisionLogger');
 const crypto = require('crypto');
 
-// 3 Sesi Terstruktur per Hari (Pagi, Siang, Malam) dengan 6 Slot Prime-Time
+// 3 Sesi Terstruktur per Hari (Pagi, Siang, Malam) dengan 3 Slot Konten per Sesi (Total 9 Slot Prime-Time per Akun)
 const DEFAULT_CONFIG = {
   autopilot_enabled: true,
-  daily_post_quota: 5, // Minimal 5 postingan per hari per platform
+  daily_post_quota: 9, // 9 postingan per akun per hari (3 per fase)
+  posts_per_phase: 3,  // Minimal 3 konten per akun pada setiap fase
   min_product_cooldown_hours: 48,
   target_split: { scaling: 0.5, testing: 0.3, promising: 0.2 },
   default_time_slots: [
-    // Sesi 1: Pagi (Morning Session)
-    { session: 'Pagi', name: 'Pagi 1', hour: 7, minute: 15 },
-    { session: 'Pagi', name: 'Pagi 2', hour: 8, minute: 45 },
-    // Sesi 2: Siang (Afternoon Session)
+    // Sesi 1: Pagi (3 Slot: 06:45, 08:15, 09:30 WIB)
+    { session: 'Pagi', name: 'Pagi 1', hour: 6, minute: 45 },
+    { session: 'Pagi', name: 'Pagi 2', hour: 8, minute: 15 },
+    { session: 'Pagi', name: 'Pagi 3', hour: 9, minute: 30 },
+    // Sesi 2: Siang (3 Slot: 11:45, 12:50, 14:10 WIB)
     { session: 'Siang', name: 'Siang 1', hour: 11, minute: 45 },
-    { session: 'Siang', name: 'Siang 2', hour: 13, minute: 15 },
-    // Sesi 3: Malam (Evening/Night Session)
-    { session: 'Malam', name: 'Malam 1', hour: 19, minute: 15 },
-    { session: 'Malam', name: 'Malam 2', hour: 20, minute: 45 },
+    { session: 'Siang', name: 'Siang 2', hour: 12, minute: 50 },
+    { session: 'Siang', name: 'Siang 3', hour: 14, minute: 10 },
+    // Sesi 3: Malam (3 Slot: 18:30, 19:45, 21:00 WIB)
+    { session: 'Malam', name: 'Malam 1', hour: 18, minute: 30 },
+    { session: 'Malam', name: 'Malam 2', hour: 19, minute: 45 },
+    { session: 'Malam', name: 'Malam 3', hour: 21, minute: 0 },
   ],
 };
 
@@ -266,183 +270,196 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       }
     }
 
-    // 5. PHASE 5: Grid Scheduler - 3 Sesi Harian (Minimal 5 post per hari)
+    // 5. PHASE 5: Multi-Account Grid Scheduler (Minimal 3 konten per akun pada setiap fase: Pagi, Siang, Malam = 9 post/akun/hari)
     const existingPostsSnap = await db.collection('posts')
       .where('user_id', '==', userId)
       .where('status', 'in', ['scheduled', 'draft'])
       .get();
 
-    const scheduledCount = existingPostsSnap.docs.length;
-    const quotaTarget = Number(opts.maxPostsToSchedule || config.daily_post_quota || 5);
-
-    if (scheduledCount >= quotaTarget * 2) {
-      logSteps.push(`Antrean jadwal sudah penuh (${scheduledCount} postingan terjadwal).`);
-      return { success: true, message: 'Antrean jadwal sudah penuh.', log: logSteps };
-    }
-
-    const postsToGenerate = Math.min(quotaTarget - scheduledCount, 6);
-    if (postsToGenerate <= 0) {
-      return { success: true, message: 'Antrean mencukupi.', log: logSteps };
-    }
-
-    // 6. PHASE 6: Dynamic Selection & Scheduling Pipeline (Presisi Waktu Indonesia Barat - WIB / UTC+7)
+    const existingPosts = existingPostsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const targetSlots = config.default_time_slots || DEFAULT_CONFIG.default_time_slots;
+    const postsPerPhase = config.posts_per_phase || 3;
     const createdPosts = [];
     const nowUtc = Date.now();
 
-    for (let i = 0; i < postsToGenerate; i++) {
-      const slotIndex = (scheduledCount + i) % config.default_time_slots.length;
-      const slot = config.default_time_slots[slotIndex];
-      const dayOffset = Math.floor((scheduledCount + i) / config.default_time_slots.length);
+    // Dapatkan hari ini dalam WIB (UTC+7)
+    const wibNow = new Date(Date.now() + 7 * 3600 * 1000);
+    const targetWibYear = wibNow.getUTCFullYear();
+    const targetWibMonth = wibNow.getUTCMonth();
+    const targetWibDate = wibNow.getUTCDate();
 
-      // Hitung tanggal UTC yang tepat untuk jam WIB (WIB = UTC + 7 -> Jam UTC = Jam WIB - 7)
-      // Dapatkan hari ini dalam WIB
-      const wibNow = new Date(Date.now() + 7 * 3600 * 1000);
-      const targetWibYear = wibNow.getUTCFullYear();
-      const targetWibMonth = wibNow.getUTCMonth();
-      const targetWibDate = wibNow.getUTCDate() + dayOffset;
-
-      // Buat Date UTC dari target WIB (Year, Month, Date, Hour - 7, Minute)
-      let targetDate = new Date(Date.UTC(targetWibYear, targetWibMonth, targetWibDate, slot.hour - 7, slot.minute, 0, 0));
-
-      // Jika slot hari ini sudah lewat waktu sekarang, jadwalkan untuk hari berikutnya
-      if (targetDate.getTime() <= nowUtc) {
-        targetDate = new Date(Date.UTC(targetWibYear, targetWibMonth, targetWibDate + 1, slot.hour - 7, slot.minute, 0, 0));
-      }
-
-      // Pilih Akun Medsos Sasaran (FB / Threads)
-      const targetAccount = socialAccounts[i % socialAccounts.length];
+    // Loop untuk setiap akun media sosial aktif (Threads & Facebook)
+    for (let accIdx = 0; accIdx < socialAccounts.length; accIdx++) {
+      const targetAccount = socialAccounts[accIdx];
       const platform = targetAccount.platform || 'facebook';
 
-
-      // Dynamic Pool Selection
-      let selectedProduct = null;
-      if (pools.new.length > 0) {
-        selectedProduct = pools.new.shift();
-      } else if (pools.proven.length > 0) {
-        selectedProduct = pools.proven[Math.floor(Math.random() * pools.proven.length)];
-      } else if (pools.promising.length > 0) {
-        selectedProduct = pools.promising[Math.floor(Math.random() * pools.promising.length)];
-      } else if (pools.testing.length > 0) {
-        selectedProduct = pools.testing[Math.floor(Math.random() * pools.testing.length)];
-      }
-
-      if (!selectedProduct) break;
-
-      // 6.1. Product Intelligence Profile
-      const profile = await profileShopeeProduct(selectedProduct, userId);
-
-      // 6.2. Media Evaluation (Max 2 images / 1 video)
-      const mediaCuration = await curateProductMedia(selectedProduct, 'auto', userId);
-
-      // Format media menjadi object { media_url, media_type } yang valid
-      const formattedMedia = (mediaCuration.selected_media || []).map(item => {
-        const url = typeof item === 'string' ? item : item?.url || item?.media_url || '';
-        const type = (typeof item === 'object' && item?.type) ? item.type : (mediaCuration.media_type || 'image');
-        return {
-          media_url: url,
-          media_type: type
-        };
-      }).filter(m => m.media_url && typeof m.media_url === 'string' && m.media_url.startsWith('http'));
-
-      // 6.3. Generate Shortlink
-      const shortlinkUrl = await createPostShortlink(selectedProduct, platform, userId);
-
-      // 6.4. Generate Content & Copywriting (Clean text with Indonesian Time Dynamics)
-      const postDraft = await generatePostContent({
-        product: selectedProduct,
-        profile,
-        platform,
-        angle: profile.recommended_angles?.[i % profile.recommended_angles.length] || 'Problem-Agitate-Solution',
-        objective: 'clicks',
-        shortlinkUrl,
-        sessionInfo: {
-          session: slot.session || 'Sesi',
-          hour: slot.hour || 12,
-          minute: slot.minute || 0
-        }
-      });
-
-
-      // 6.5. Semantic Content Fingerprint Anti-Duplication Check
-      const recentPosts = await getRecentPlatformPosts(userId, platform, 7);
-      const similarityCheck = checkContentSimilarity(
-        { caption: postDraft.caption, hook_text: postDraft.raw_hook, product_id: selectedProduct.id },
-        recentPosts,
-        0.85
+      // Ambil postingan yang sudah dijadwalkan khusus untuk akun ini
+      const accountExistingPosts = existingPosts.filter(p => 
+        Array.isArray(p.targets) && p.targets.some(t => t.account_id === targetAccount.id)
       );
 
-      if (similarityCheck.is_duplicate) {
-        logSteps.push(`Draf konten untuk ${selectedProduct.title} ditolak karena kemiripan semantik tinggi (${similarityCheck.highest_similarity}%).`);
-        continue;
-      }
+      // Hitung jitter menit antar akun (misal akun 1: +0m, akun 2: +7m, akun 3: +14m)
+      // agar tidak menembak Meta API di menit yang sama persis
+      const accountJitterMin = (accIdx * 7) % 25;
 
-      // 6.6. Create Scheduled Post Document
-      const postDocRef = db.collection('posts').doc();
-      const newPost = {
-        id: postDocRef.id,
-        user_id: userId,
-        title: postDraft.title,
-        content: postDraft.caption,
-        status: 'scheduled',
-        scheduled_at: targetDate.toISOString(),
-        post_type: mediaCuration.media_type === 'video' ? 'reel' : 'feed',
-        media: formattedMedia,
-        targets: [{
-          id: Math.random().toString(36).substring(2, 9),
-          account_id: targetAccount.id,
-          platform: targetAccount.platform,
-          page_name: targetAccount.page_name,
-          status: 'pending',
-          error_message: null,
-          attempt_count: 0
-        }],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+      // Iterasi ke 9 slot waktu (3 Pagi, 3 Siang, 3 Malam)
+      for (let slotIdx = 0; slotIdx < targetSlots.length; slotIdx++) {
+        const slot = targetSlots[slotIdx];
 
-      await postDocRef.set(newPost);
+        // Tentukan jam & menit slot dengan jitter akun
+        let slotMinute = slot.minute + accountJitterMin;
+        let slotHour = slot.hour;
+        if (slotMinute >= 60) {
+          slotHour += Math.floor(slotMinute / 60);
+          slotMinute = slotMinute % 60;
+        }
 
-      // 6.7. Record in Product Post Memory
-      await recordPostMemory({
-        product_id: selectedProduct.id,
-        post_id: postDocRef.id,
-        quarter,
-        objective: 'clicks',
-        user_id: userId,
-        context_at_post: {
+        // Tentukan tanggal eksekusi WIB (hari ini atau besok jika jam sudah lewat)
+        let targetDate = new Date(Date.UTC(targetWibYear, targetWibMonth, targetWibDate, slotHour - 7, slotMinute, 0, 0));
+        if (targetDate.getTime() <= nowUtc + 5 * 60 * 1000) {
+          targetDate = new Date(Date.UTC(targetWibYear, targetWibMonth, targetWibDate + 1, slotHour - 7, slotMinute, 0, 0));
+        }
+
+        // Cek apakah akun ini sudah memiliki postingan yang dijadwalkan di sekitar slot waktu ini (+- 30 menit)
+        const hasSlotCovered = accountExistingPosts.some(p => {
+          if (!p.scheduled_at) return false;
+          const pTime = new Date(p.scheduled_at).getTime();
+          return Math.abs(pTime - targetDate.getTime()) < 30 * 60 * 1000;
+        });
+
+        if (hasSlotCovered) {
+          continue; // Slot sudah terisi untuk akun ini
+        }
+
+        // Dynamic Product Selection
+        let selectedProduct = null;
+        if (pools.new.length > 0) {
+          selectedProduct = pools.new.shift();
+        } else if (pools.proven.length > 0) {
+          selectedProduct = pools.proven[Math.floor(Math.random() * pools.proven.length)];
+        } else if (pools.promising.length > 0) {
+          selectedProduct = pools.promising[Math.floor(Math.random() * pools.promising.length)];
+        } else if (pools.testing.length > 0) {
+          selectedProduct = pools.testing[Math.floor(Math.random() * pools.testing.length)];
+        } else if (validProducts.length > 0) {
+          selectedProduct = validProducts[Math.floor(Math.random() * validProducts.length)];
+        }
+
+        if (!selectedProduct) break;
+
+        // 6.1. Profile Produk
+        const profile = await profileShopeeProduct(selectedProduct, userId);
+
+        // 6.2. Evaluasi Media
+        const mediaCuration = await curateProductMedia(selectedProduct, 'auto', userId);
+        const formattedMedia = (mediaCuration.selected_media || []).map(item => {
+          const url = typeof item === 'string' ? item : item?.url || item?.media_url || '';
+          const type = (typeof item === 'object' && item?.type) ? item.type : (mediaCuration.media_type || 'image');
+          return {
+            media_url: url,
+            media_type: type
+          };
+        }).filter(m => m.media_url && typeof m.media_url === 'string' && m.media_url.startsWith('http'));
+
+        // 6.3. Generate Shortlink Unik Khusus Akun Ini
+        const shortlinkUrl = await createPostShortlink(selectedProduct, platform, userId);
+
+        // 6.4. Generate Copywriting Segar Khusus Sesi (Pagi/Siang/Malam)
+        const postDraft = await generatePostContent({
+          product: selectedProduct,
+          profile,
           platform,
-          account_id: targetAccount.id,
-          account_name: targetAccount.page_name,
-          shortlink_code: shortlinkUrl.split('/s/')[1] || '',
-          target_audience: profile.target_audience,
-          price_at_post: selectedProduct.price,
-          original_price_at_post: selectedProduct.original_price,
-          discount_at_post: selectedProduct.discount,
-          posting_hour: slot.hour,
-          posting_day: targetDate.toLocaleDateString('en-US', { weekday: 'long' }),
-          hook_type: postDraft.hook_type,
-          copy_angle: postDraft.copy_angle,
-          template_id: postDraft.template_id,
-          template_name: postDraft.template_name,
-          media_type: mediaCuration.media_type,
-          media_urls: formattedMedia.map(m => m.media_url),
-          content_fingerprint: postDraft.content_fingerprint
-        },
-        raw_metrics: { views: 0, likes: 0, comments: 0, shares: 0, affiliate_clicks: 0 },
-        published_at: targetDate.toISOString()
-      });
+          angle: profile.recommended_angles?.[(accIdx + slotIdx) % (profile.recommended_angles?.length || 1)] || 'Problem-Agitate-Solution',
+          objective: 'clicks',
+          shortlinkUrl,
+          sessionInfo: {
+            session: slot.session || 'Sesi',
+            hour: slot.hour || 12,
+            minute: slot.minute || 0
+          }
+        });
 
-      createdPosts.push({
-        postId: postDocRef.id,
-        productTitle: selectedProduct.title,
-        scheduledAt: targetDate.toISOString(),
-        platform,
-        session: slot.session || 'Sesi'
-      });
+        // 6.5. Semantic Content Fingerprint Check
+        const recentPosts = await getRecentPlatformPosts(userId, platform, 7);
+        const similarityCheck = checkContentSimilarity(
+          { caption: postDraft.caption, hook_text: postDraft.raw_hook, product_id: selectedProduct.id },
+          recentPosts,
+          0.85
+        );
 
-      logSteps.push(`✅ [${slot.session || 'Sesi'}] Menjadwalkan post #${postDocRef.id} "${selectedProduct.title.slice(0, 30)}..." pada ${targetDate.toLocaleString('id-ID')} di ${platform}`);
+        if (similarityCheck.is_duplicate) {
+          logSteps.push(`Draf untuk @${targetAccount.page_name} ditolak karena kemiripan semantik (${similarityCheck.highest_similarity}%).`);
+          continue;
+        }
+
+        // 6.6. Simpan Dokumen Postingan Terjadwal
+        const postDocRef = db.collection('posts').doc();
+        const newPost = {
+          id: postDocRef.id,
+          user_id: userId,
+          title: postDraft.title,
+          content: postDraft.caption,
+          status: 'scheduled',
+          scheduled_at: targetDate.toISOString(),
+          post_type: mediaCuration.media_type === 'video' ? 'reel' : 'feed',
+          media: formattedMedia,
+          targets: [{
+            id: Math.random().toString(36).substring(2, 9),
+            account_id: targetAccount.id,
+            platform: targetAccount.platform,
+            page_name: targetAccount.page_name,
+            status: 'pending',
+            error_message: null,
+            attempt_count: 0
+          }],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        await postDocRef.set(newPost);
+
+        // 6.7. Rekam ke Product Post Memory
+        await recordPostMemory({
+          product_id: selectedProduct.id,
+          post_id: postDocRef.id,
+          quarter,
+          objective: 'clicks',
+          user_id: userId,
+          context_at_post: {
+            platform,
+            account_id: targetAccount.id,
+            account_name: targetAccount.page_name,
+            shortlink_code: shortlinkUrl.split('/s/')[1] || '',
+            target_audience: profile.target_audience,
+            price_at_post: selectedProduct.price,
+            original_price_at_post: selectedProduct.original_price,
+            discount_at_post: selectedProduct.discount,
+            posting_hour: slot.hour,
+            posting_day: targetDate.toLocaleDateString('en-US', { weekday: 'long' }),
+            hook_type: postDraft.hook_type,
+            copy_angle: postDraft.copy_angle,
+            template_id: postDraft.template_id,
+            template_name: postDraft.template_name,
+            media_type: mediaCuration.media_type,
+            media_urls: formattedMedia.map(m => m.media_url),
+            content_fingerprint: postDraft.content_fingerprint
+          },
+          raw_metrics: { views: 0, likes: 0, comments: 0, shares: 0, affiliate_clicks: 0 },
+          published_at: targetDate.toISOString()
+        });
+
+        createdPosts.push({
+          postId: postDocRef.id,
+          accountName: targetAccount.page_name,
+          productTitle: selectedProduct.title,
+          scheduledAt: targetDate.toISOString(),
+          platform,
+          session: slot.session || 'Sesi'
+        });
+
+        logSteps.push(`✅ [${slot.session}] @${targetAccount.page_name} (${platform}) - "${selectedProduct.title.slice(0, 25)}..." pada ${targetDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`);
+      }
     }
-
 
     return {
       success: true,
