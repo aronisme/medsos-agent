@@ -2,13 +2,15 @@ const { callMistralAI } = require('./aiQueueService');
 const { selectTemplateByBandit, fillTemplatePlaceholders } = require('./templateService');
 const { generateContentFingerprint } = require('./contentFingerprint');
 
-const COPYWRITER_SYSTEM_PROMPT = `Kamu adalah Senior Copywriter & Direct Response Marketer khusus Social Media Affiliate Marketing (Facebook, Instagram, Threads).
+const COPYWRITER_SYSTEM_PROMPT = `Kamu adalah Senior Copywriter & Direct Response Marketer khusus Social Media Affiliate Marketing (Facebook, Threads).
 Tugasmu adalah meracik copywriting yang sangat menarik, natural, tidak terkesan kaku atau robotik, dan memiliki Call To Action (CTA) klik link yang kuat.
 
-Sesuaikan tone berdasarkan platform:
-- Instagram: Visual hook yang estetik, rapi, line breaks bersih, emoji proporsional, hashtag relevan.
-- Facebook: Storytelling mengalir, relatable, emosional, informasi promo jelas.
-- Threads: Punchy, to-the-point, santai seperti obrolan teman, direct hook.
+ATURAN WAJIB PENULISAN:
+1. JANGAN PERNAH MENGGUNAKAN TANDA BINTANG ** atau * atau format markdown apapun! Tulis langsung teks bersih dan jelas.
+2. Gunakan simbol bullet biasa (•) untuk daftar keunggulan tanpa tanda bintang.
+3. Sesuaikan tone berdasarkan platform:
+   - Facebook: Storytelling mengalir, relatable, emosional, informasi harga & promo jelas.
+   - Threads: Punchy, to-the-point, santai seperti obrolan teman, direct hook 1-2 baris.
 
 Keluarkan output HANYA dalam format JSON valid tanpa teks pengantar:
 {
@@ -17,6 +19,22 @@ Keluarkan output HANYA dalam format JSON valid tanpa teks pengantar:
   "usp_bullets": "• Poin keunggulan 1\\n• Poin keunggulan 2\\n• Poin keunggulan 3",
   "hashtags": "#Tag1 #Tag2 #Tag3 #ShopeeAffiliate"
 }`;
+
+/**
+ * Sanitasi teks caption untuk menghapus semua karakter markdown asterisks (*, **)
+ */
+function cleanCaptionText(text = '') {
+  if (!text) return '';
+  return String(text)
+    // Hapus markdown bold/italic: **teks** -> teks, *teks* -> teks
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/^#+\s+/gm, '') // Hapus # heading markdown
+    .trim();
+}
+
 
 /**
  * Meracik konten postingan lengkap untuk produk Shopee
@@ -94,21 +112,23 @@ async function generatePostContent({
     const discountText = product.discount ? `(${product.discount})` : '';
 
     // 3. Rakit Placeholder Template
-    const filledCaption = fillTemplatePlaceholders(template.structure, {
-      hook: parsedCopy.hook,
-      pain_point: parsedCopy.pain_point_text,
-      product_name: product.title,
+    const rawFilledCaption = fillTemplatePlaceholders(template.structure, {
+      hook: cleanCaptionText(parsedCopy.hook),
+      pain_point: cleanCaptionText(parsedCopy.pain_point_text),
+      product_name: cleanCaptionText(product.title),
       price_discount: `${priceText} ${discountText}`.trim(),
       discount: product.discount || 'Spesial Promo',
-      usp_bullets: parsedCopy.usp_bullets,
+      usp_bullets: cleanCaptionText(parsedCopy.usp_bullets),
       cta_link: shortlinkUrl || product.affiliate_url || product.product_url,
       hashtags: parsedCopy.hashtags,
     });
 
+    const filledCaption = cleanCaptionText(rawFilledCaption);
+
     // 4. Hitung Content Fingerprint
     const fingerprint = generateContentFingerprint({
       productId: product.id,
-      hookText: parsedCopy.hook,
+      hookText: cleanCaptionText(parsedCopy.hook),
       captionText: filledCaption,
       mediaUrl: ''
     });
@@ -121,7 +141,7 @@ async function generatePostContent({
       hook_type: activeAngle,
       copy_angle: activeAngle,
       content_fingerprint: fingerprint,
-      raw_hook: parsedCopy.hook,
+      raw_hook: cleanCaptionText(parsedCopy.hook),
     };
   } catch (err) {
     console.error('[generatePostContent Error]:', err.message);
@@ -131,4 +151,6 @@ async function generatePostContent({
 
 module.exports = {
   generatePostContent,
+  cleanCaptionText,
 };
+

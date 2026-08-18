@@ -9,19 +9,25 @@ const { synthesizeKnowledge, getActiveKnowledgeInsights } = require('./knowledge
 const { logAgentDecision } = require('./decisionLogger');
 const crypto = require('crypto');
 
-// Default config
+// 3 Sesi Terstruktur per Hari (Pagi, Siang, Malam) dengan 6 Slot Prime-Time
 const DEFAULT_CONFIG = {
   autopilot_enabled: true,
-  daily_post_quota: 4,
-  min_product_cooldown_hours: 48, // 2 hari jeda posting produk yang sama
+  daily_post_quota: 5, // Minimal 5 postingan per hari per platform
+  min_product_cooldown_hours: 48,
   target_split: { scaling: 0.5, testing: 0.3, promising: 0.2 },
   default_time_slots: [
-    { name: 'Pagi', hour: 7, minute: 30 },
-    { name: 'Siang', hour: 12, minute: 15 },
-    { name: 'Sore', hour: 17, minute: 0 },
-    { name: 'Malam', hour: 20, minute: 0 },
+    // Sesi 1: Pagi (Morning Session)
+    { session: 'Pagi', name: 'Pagi 1', hour: 7, minute: 15 },
+    { session: 'Pagi', name: 'Pagi 2', hour: 8, minute: 45 },
+    // Sesi 2: Siang (Afternoon Session)
+    { session: 'Siang', name: 'Siang 1', hour: 11, minute: 45 },
+    { session: 'Siang', name: 'Siang 2', hour: 13, minute: 15 },
+    // Sesi 3: Malam (Evening/Night Session)
+    { session: 'Malam', name: 'Malam 1', hour: 19, minute: 15 },
+    { session: 'Malam', name: 'Malam 2', hour: 20, minute: 45 },
   ],
 };
+
 
 /**
  * Mengambil konfigurasi agent untuk user
@@ -103,14 +109,13 @@ async function createPostShortlink(product, platform, userId) {
       updated_at: now
     });
 
-    const publicUrl = process.env.PUBLIC_URL || process.env.BASE_URL || 'http://localhost:4000';
+    const publicUrl = process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app';
     return `${publicUrl}/s/${shortCode}`;
   } catch (err) {
     console.error('[createPostShortlink Error]:', err.message);
     return product.affiliate_url || product.product_url || '';
   }
 }
-
 
 /**
  * Menjalankan 1 Putaran Siklus Otonom (Autonomous Execution Cycle)
@@ -126,22 +131,35 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     }
 
     const quarter = getCurrentQuarter();
-    logSteps.push(`Memulai Siklus Otonom ${quarter} untuk User ${userId}`);
+    logSteps.push(`Memulai Siklus Otonom ${quarter} (3 Sesi per Hari) untuk User ${userId}`);
 
-    // 1. PHASE 1: Synthesize Knowledge & Learning Layer
+    // 1. PHASE 1: Synthesize Knowledge & Evaluasi Sesi Sebelumnya
     const newInsights = await synthesizeKnowledge(userId);
-    logSteps.push(`Learning Layer: Berhasil menyintesis ${newInsights.length} wawasan performa.`);
+    logSteps.push(`Evaluasi Sesi: Berhasil menganalisis performa sesi sebelumnya & menyintesis ${newInsights.length} wawasan.`);
 
-    // 2. PHASE 2: Ambil Akun Media Sosial yang Aktif
+    await logAgentDecision({
+      userId,
+      decisionType: 'SESSION_EVALUATION',
+      productId: 'system',
+      summary: 'Evaluasi Akhir Sesi: Mempelajari Metrik & Menyesuaikan Sesi Berikutnya',
+      reasoning: 'Mengevaluasi hasil tayangan & klik link dari sesi sebelumnya, memperbarui bobot Multi-Armed Bandit, dan menyiapkan strategi konten untuk sesi berikutnya.',
+      metadata: { insights_count: newInsights.length }
+    });
+
+    // 2. PHASE 2: Ambil Akun Media Sosial yang Aktif (Stop IG, fokus Facebook & Threads)
     const accountsSnap = await db.collection('social_accounts')
       .where('user_id', '==', userId)
       .where('is_active', '==', 1)
       .get();
 
-    const socialAccounts = accountsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Filter platform: HANYA target Facebook dan Threads karena mendukung link klik langsung di caption
+    const socialAccounts = accountsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(acc => acc.platform !== 'instagram');
+
     if (socialAccounts.length === 0) {
-      logSteps.push('Peringatan: Tidak ada akun media sosial yang aktif terhubung.');
-      return { success: false, message: 'Tidak ada akun sosial aktif.', log: logSteps };
+      logSteps.push('Peringatan: Tidak ada akun Facebook atau Threads yang aktif terhubung.');
+      return { success: false, message: 'Tidak ada akun Facebook atau Threads aktif (Instagram dinonaktifkan untuk link caption).', log: logSteps };
     }
 
     // 3. PHASE 3: Inventory Classification & Dynamic Quota
@@ -164,7 +182,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       stopped: allProducts.filter(p => p.lifecycle_status === 'STOPPED' || p.quarterly_status?.status === 'stopped_for_quarter')
     };
 
-    logSteps.push(`Inventori Produk: ${pools.new.length} Baru, ${pools.testing.length} Sedang Diuji, ${pools.promising.length} Menjanjikan, ${pools.proven.length} Pemenang, ${pools.stopped.length} Di-Stop.`);
+    logSteps.push(`Inventori: ${pools.new.length} Baru, ${pools.testing.length} Sedang Diuji, ${pools.promising.length} Menjanjikan, ${pools.proven.length} Pemenang, ${pools.stopped.length} Di-Stop.`);
 
     // 4. PHASE 4: Jalankan Diagnosis untuk Produk yang Mengalami Masalah
     for (const prod of pools.testing) {
@@ -174,21 +192,21 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       }
     }
 
-    // 5. PHASE 5: Grid Scheduler - Cek Antrean Jadwal 24-48 Jam ke Depan
+    // 5. PHASE 5: Grid Scheduler - 3 Sesi Harian (Minimal 5 post per hari)
     const existingPostsSnap = await db.collection('posts')
       .where('user_id', '==', userId)
       .where('status', 'in', ['scheduled', 'draft'])
       .get();
 
     const scheduledCount = existingPostsSnap.docs.length;
-    const quotaTarget = Number(opts.maxPostsToSchedule || config.daily_post_quota || 4);
+    const quotaTarget = Number(opts.maxPostsToSchedule || config.daily_post_quota || 5);
 
     if (scheduledCount >= quotaTarget * 2) {
-      logSteps.push(`Antrean jadwal sudah penuh (${scheduledCount} postingan terjadwal). Tidak perlu membuat jadwal baru saat ini.`);
+      logSteps.push(`Antrean jadwal sudah penuh (${scheduledCount} postingan terjadwal).`);
       return { success: true, message: 'Antrean jadwal sudah penuh.', log: logSteps };
     }
 
-    const postsToGenerate = Math.min(quotaTarget - scheduledCount, 4);
+    const postsToGenerate = Math.min(quotaTarget - scheduledCount, 6);
     if (postsToGenerate <= 0) {
       return { success: true, message: 'Antrean mencukupi.', log: logSteps };
     }
@@ -198,7 +216,6 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     const now = new Date();
 
     for (let i = 0; i < postsToGenerate; i++) {
-      // Pilih slot waktu berikutnya
       const slotIndex = (scheduledCount + i) % config.default_time_slots.length;
       const slot = config.default_time_slots[slotIndex];
 
@@ -206,16 +223,15 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       targetDate.setDate(targetDate.getDate() + Math.floor((scheduledCount + i) / config.default_time_slots.length));
       targetDate.setHours(slot.hour, slot.minute, 0, 0);
 
-      // Jika waktu slot hari ini sudah terlewat, geser ke besok
       if (targetDate.getTime() <= now.getTime()) {
         targetDate.setDate(targetDate.getDate() + 1);
       }
 
-      // Pilih Akun Medsos Sasaran secara seimbang
+      // Pilih Akun Medsos Sasaran (FB / Threads)
       const targetAccount = socialAccounts[i % socialAccounts.length];
       const platform = targetAccount.platform || 'facebook';
 
-      // Dynamic Pool Selection (Dynamic Quota: Prioritaskan New > Proven > Promising)
+      // Dynamic Pool Selection
       let selectedProduct = null;
       if (pools.new.length > 0) {
         selectedProduct = pools.new.shift();
@@ -235,10 +251,20 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       // 6.2. Media Evaluation (Max 2 images / 1 video)
       const mediaCuration = await curateProductMedia(selectedProduct, 'auto', userId);
 
+      // Format media menjadi object { media_url, media_type } yang valid
+      const formattedMedia = (mediaCuration.selected_media || []).map(item => {
+        const url = typeof item === 'string' ? item : item?.url || item?.media_url || '';
+        const type = (typeof item === 'object' && item?.type) ? item.type : (mediaCuration.media_type || 'image');
+        return {
+          media_url: url,
+          media_type: type
+        };
+      }).filter(m => m.media_url && typeof m.media_url === 'string' && m.media_url.startsWith('http'));
+
       // 6.3. Generate Shortlink
       const shortlinkUrl = await createPostShortlink(selectedProduct, platform, userId);
 
-      // 6.4. Generate Content & Copywriting
+      // 6.4. Generate Content & Copywriting (Clean text without asterisks)
       const postDraft = await generatePostContent({
         product: selectedProduct,
         profile,
@@ -271,7 +297,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
         status: 'scheduled',
         scheduled_at: targetDate.toISOString(),
         post_type: mediaCuration.media_type === 'video' ? 'reel' : 'feed',
-        media: mediaCuration.selected_media,
+        media: formattedMedia,
         targets: [{
           id: Math.random().toString(36).substring(2, 9),
           account_id: targetAccount.id,
@@ -310,7 +336,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           template_id: postDraft.template_id,
           template_name: postDraft.template_name,
           media_type: mediaCuration.media_type,
-          media_urls: mediaCuration.selected_media.map(m => m.url),
+          media_urls: formattedMedia.map(m => m.media_url),
           content_fingerprint: postDraft.content_fingerprint
         },
         raw_metrics: { views: 0, likes: 0, comments: 0, shares: 0, affiliate_clicks: 0 },
@@ -321,11 +347,13 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
         postId: postDocRef.id,
         productTitle: selectedProduct.title,
         scheduledAt: targetDate.toISOString(),
-        platform
+        platform,
+        session: slot.session || 'Sesi'
       });
 
-      logSteps.push(`✅ Menjadwalkan post #${postDocRef.id} untuk "${selectedProduct.title.slice(0, 30)}..." pada ${targetDate.toLocaleString('id-ID')} di ${platform}`);
+      logSteps.push(`✅ [${slot.session || 'Sesi'}] Menjadwalkan post #${postDocRef.id} "${selectedProduct.title.slice(0, 30)}..." pada ${targetDate.toLocaleString('id-ID')} di ${platform}`);
     }
+
 
     return {
       success: true,

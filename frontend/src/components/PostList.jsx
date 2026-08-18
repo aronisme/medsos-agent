@@ -213,36 +213,57 @@ export default function PostList() {
         </div>
       )}
 
-      {/* Details Modal */}
+      {/* Details Modal (Fixed Responsive Container & Sticky Header) */}
       {selectedPost && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative text-left">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
-              <h3 className="font-bold text-base text-white">Detail Postingan #{selectedPost.post.id}</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
+          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl relative text-left max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header Sticky */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0 bg-slate-900">
+              <div>
+                <h3 className="font-bold text-base text-white">Detail Postingan</h3>
+                <span className="text-[11px] text-slate-500 font-mono">#{selectedPost.post.id}</span>
+              </div>
               <button
                 onClick={() => setSelectedPost(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Tutup Modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500">Status</span>
-                <p className="text-xs font-semibold text-indigo-400 capitalize">{selectedPost.post.status}</p>
+            {/* Modal Body Scrollable */}
+            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Status Postingan</span>
+                  <p className="text-xs font-bold text-indigo-400 capitalize">{selectedPost.post.status}</p>
+                </div>
+                {selectedPost.post.scheduled_at && (
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Jadwal Tayang</span>
+                    <p className="text-xs font-semibold text-amber-400">
+                      {new Date(selectedPost.post.scheduled_at).toLocaleString('id-ID', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {selectedPost.post.title && (
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500">Judul</span>
-                  <p className="text-sm font-bold text-white">{selectedPost.post.title}</p>
+                  <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Judul / Headline</span>
+                  <p className="text-sm font-bold text-white mt-0.5">{selectedPost.post.title}</p>
                 </div>
               )}
 
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-500">Isi Konten</span>
-                <p className="text-xs text-slate-300 whitespace-pre-wrap bg-slate-950 p-3 rounded-xl border border-slate-800 leading-relaxed mt-1">
+                <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Isi Konten & Caption</span>
+                <p className="text-xs text-slate-200 whitespace-pre-wrap bg-slate-950 p-4 rounded-2xl border border-slate-800 leading-relaxed mt-1 font-sans">
                   {selectedPost.post.content}
                 </p>
               </div>
@@ -250,17 +271,31 @@ export default function PostList() {
               {/* Media List */}
               {selectedPost.post.media?.length > 0 && (
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500">Media Terlampir</span>
-                  <div className="mt-1 flex items-center gap-2 overflow-x-auto">
-                    {selectedPost.post.media.map((m, idx) => (
-                      <div key={idx} className="w-20 h-20 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0">
-                        {m.media_type === 'video' ? (
-                          <video src={m.media_url} className="w-full h-full object-cover" />
-                        ) : (
-                          <img src={m.media_url} alt="Media" className="w-full h-full object-cover" />
-                        )}
-                      </div>
-                    ))}
+                  <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Media Terlampir</span>
+                  <div className="mt-1.5 flex items-center gap-3 overflow-x-auto pb-1">
+                    {selectedPost.post.media.map((m, idx) => {
+                      const mediaUrl = typeof m === 'string' ? m : (m?.media_url || m?.url || '');
+                      const mediaType = typeof m === 'object' && m?.media_type ? m.media_type : (m?.type || 'image');
+                      if (!mediaUrl) return null;
+
+                      return (
+                        <div key={idx} className="w-24 h-24 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0 shadow-md">
+                          {mediaType === 'video' ? (
+                            <video src={mediaUrl} controls className="w-full h-full object-cover" />
+                          ) : (
+                            <img
+                              src={mediaUrl}
+                              alt="Media"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = 'https://placehold.co/100x100/1e293b/94a3b8?text=Shopee+Image';
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -268,14 +303,14 @@ export default function PostList() {
               {/* Target Accounts Status */}
               {selectedPost.post.targets?.length > 0 && (
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500">Status Target Sosmed</span>
-                  <div className="mt-1 space-y-2">
+                  <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Target Akun Medsos</span>
+                  <div className="mt-1.5 space-y-2">
                     {selectedPost.post.targets.map((t) => (
                       <div
                         key={t.id}
-                        className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs"
+                        className="p-3 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-between text-xs"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2.5">
                           {t.platform === 'facebook' ? (
                             <Facebook className="w-4 h-4 text-fb-blue" />
                           ) : t.platform === 'instagram' ? (
@@ -283,22 +318,22 @@ export default function PostList() {
                           ) : (
                             <AtSign className="w-4 h-4 text-slate-300" />
                           )}
-                          <span className="font-semibold text-white">{t.page_name || t.platform}</span>
+                          <span className="font-bold text-white">{t.page_name || t.platform}</span>
                         </div>
                         <div className="text-right">
                           <span
-                            className={`font-bold capitalize text-[11px] ${
+                            className={`font-extrabold capitalize text-[11px] px-2.5 py-0.5 rounded-full border ${
                               t.status === 'success'
-                                ? 'text-emerald-400'
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                                 : t.status === 'failed'
-                                ? 'text-rose-400'
-                                : 'text-amber-400'
+                                ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                                : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                             }`}
                           >
                             {t.status}
                           </span>
                           {t.error_message && (
-                            <p className="text-[10px] text-rose-400 mt-0.5 max-w-xs truncate">{t.error_message}</p>
+                            <p className="text-[10px] text-rose-400 mt-1 max-w-xs truncate">{t.error_message}</p>
                           )}
                         </div>
                       </div>
@@ -308,27 +343,29 @@ export default function PostList() {
               )}
             </div>
 
-            <div className="mt-6 pt-3 border-t border-slate-800 flex justify-end gap-2">
+            {/* Modal Footer Sticky */}
+            <div className="p-4 px-6 border-t border-slate-800 bg-slate-900/95 flex items-center justify-end gap-3 shrink-0">
+              <button
+                onClick={() => setSelectedPost(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors"
+              >
+                Tutup
+              </button>
               {selectedPost.post.status !== 'posted' && (
                 <button
                   onClick={() => handlePublishNow(selectedPost.post.id)}
                   disabled={actionLoading}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 transition-all"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Publish Sekarang</span>
                 </button>
               )}
-              <button
-                onClick={() => setSelectedPost(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
-              >
-                Tutup
-              </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
