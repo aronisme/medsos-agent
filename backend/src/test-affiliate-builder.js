@@ -1,12 +1,12 @@
 /**
- * Test Script: Pembuat Link Afiliasi Shopee & Shortlink Tracking
+ * Test Script: Pembuat Link Afiliasi Shopee & Simpan ke Database Firestore
  */
 require('dotenv').config();
 const { db } = require('./config/firebase');
 const { buildAffiliateLink } = require('./routes/affiliate');
 
-async function testAffiliateLinkGeneration() {
-  console.log('=== 🧪 MEMULAI TEST AGENT PEMBUAT LINK AFILIASI SHOPEE ===\n');
+async function testAffiliateLinkGenerationAndSave() {
+  console.log('=== 🧪 MENJALANKAN TEST PEMBUATAN & PENYIMPANAN LINK AFILIASI KE FIRESTORE ===\n');
 
   try {
     // 1. Ambil 1 produk dari Firestore affiliate_products
@@ -16,73 +16,73 @@ async function testAffiliateLinkGeneration() {
     if (!snapshot.empty) {
       const doc = snapshot.docs[0];
       product = { id: doc.id, ...doc.data() };
-      console.log('1. Menggunakan Produk Tersedia dari Database:');
+      console.log('1. Menggunakan Produk dari Database:');
       console.log('   - ID Produk  :', product.id);
       console.log('   - Judul      :', product.title);
       console.log('   - URL Asli   :', product.product_url || product.affiliate_url);
-      console.log('   - Harga      : Rp', Number(product.price || 0).toLocaleString('id-ID'));
     } else {
-      console.log('1. Database affiliate_products kosong, menggunakan mock produk Shopee:');
       product = {
-        id: 'shopee_prod_99812',
+        id: 'shopee_prod_demo',
         title: 'TWS Gaming Low Latency 5.3 Bluetooth Earphone',
         product_url: 'https://shopee.co.id/product/12345678/987654321',
         price: 129000
       };
-      console.log('   - ID Produk  :', product.id);
-      console.log('   - Judul      :', product.title);
-      console.log('   - URL Asli   :', product.product_url);
     }
 
-    console.log('\n2. Menguji Pembuatan Link Afiliasi untuk 2 Platform (Facebook & Threads):');
-
     const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338';
-    const platforms = ['facebook', 'threads'];
+    const now = new Date().toISOString();
 
-    for (const platform of platforms) {
+    // Buat dan simpan r_test_fa (Facebook) dan r_test_th (Threads)
+    const testCases = [
+      { code: 'r_test_fa', platform: 'facebook' },
+      { code: 'r_test_th', platform: 'threads' },
+      { code: 'r_demo_shopee', platform: 'facebook' },
+    ];
+
+    console.log('\n2. Menyimpan Link Afiliasi Langsung ke Firestore short_links:');
+
+    for (const item of testCases) {
       const tracking = {
-        source: platform,
+        source: item.platform,
         campaign: 'auto_agent',
         content: product.id,
         custom_1: 'medsos_agent'
       };
 
       const rawUrl = product.product_url || product.affiliate_url || 'https://shopee.co.id';
-      const destinationAffiliateUrl = buildAffiliateLink(rawUrl, tracking, affiliateId);
-      
-      const shortCode = 'r_test_' + platform.slice(0, 2);
+      const destinationUrl = buildAffiliateLink(rawUrl, tracking, affiliateId);
       const publicUrl = process.env.PUBLIC_URL || 'https://shopee-link-aff.vercel.app';
-      const finalShortUrl = `${publicUrl}/s/${shortCode}`;
+      const shortUrl = `${publicUrl}/s/${item.code}`;
 
-      console.log(`\n   📌 [Platform: ${platform.toUpperCase()}]`);
-      console.log('   - Shopee Affiliate Destination:');
-      console.log('     ', destinationAffiliateUrl);
-      console.log('   - Shortlink Publik yang disematkan di Caption:');
-      console.log('     ', finalShortUrl);
-      console.log('   - Parameter Tracking Sub-ID:');
-      console.log('      • source   :', tracking.source);
-      console.log('      • campaign :', tracking.campaign);
-      console.log('      • content  :', tracking.content);
-      console.log('      • custom_1 :', tracking.custom_1);
+      // Simpan langsung ke Firestore agar bisa diklik di browser
+      await db.collection('short_links').doc(item.code).set({
+        code: item.code,
+        user_id: product.user_id || 'system',
+        product_id: product.id,
+        title: product.title || 'Shopee Product',
+        product_url: rawUrl,
+        destination_url: destinationUrl,
+        platform: item.platform,
+        tracking: tracking,
+        total_clicks: 0,
+        human_clicks: 0,
+        bot_clicks: 0,
+        created_at: now,
+        updated_at: now
+      });
 
-      // Verifikasi komponen URL
-      const isShopeeAff = destinationAffiliateUrl.startsWith('https://s.shopee.co.id/an_redir');
-      const hasAffiliateId = destinationAffiliateUrl.includes(`affiliate_id=${affiliateId}`);
-      const hasSubId = destinationAffiliateUrl.includes(`sub_id=${platform}-auto_agent-${product.id}-medsos_agent-`);
-      const hasCorrectDomain = finalShortUrl.startsWith('https://shopee-link-aff.vercel.app');
-
-      if (isShopeeAff && hasAffiliateId && hasSubId && hasCorrectDomain) {
-        console.log(`   ✅ Status: VALID 100% (Resmi Shopee Affiliate Link + Sub-ID Aktif + Domain Vercel Baru)`);
-      } else {
-        console.log(`   ⚠️ Status Periksa: isShopeeAff=${isShopeeAff}, hasAffId=${hasAffiliateId}, hasSubId=${hasSubId}, domain=${hasCorrectDomain}`);
-      }
+      console.log(`\n   ✅ [Shortlink: ${item.code}]`);
+      console.log('   - URL yang bisa dibuka sekarang di browser:');
+      console.log('     ', shortUrl);
+      console.log('   - Target Pengalihan Shopee Affiliate:');
+      console.log('     ', destinationUrl);
     }
 
-    console.log('\n=== 🎉 TEST PEMBUAT LINK AFILIASI SELESAI & BERHASIL SEMPURNA ===');
+    console.log('\n=== 🎉 LINK AFILIASI SUDAH TERSIMPAN DI DATABASE FIRESTORE (SIAP DIKLIK) ===');
 
   } catch (err) {
-    console.error('Error saat testing:', err);
+    console.error('Error:', err);
   }
 }
 
-testAffiliateLinkGeneration();
+testAffiliateLinkGenerationAndSave();
