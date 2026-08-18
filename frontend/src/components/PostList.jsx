@@ -168,44 +168,24 @@ export default function PostList() {
                     <span className="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {new Date(post.scheduled_at).toLocaleString('id-ID', {
+                        timeZone: 'Asia/Jakarta',
                         day: 'numeric',
                         month: 'short',
                         hour: '2-digit',
                         minute: '2-digit',
-                      })}
+                      })} WIB
                     </span>
                   ) : (
                     <span className="text-[11px] text-slate-500">Manual / Immediate</span>
                   )}
 
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => fetchDetails(post.id)}
-                      className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Lihat Detail"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-
-                    {post.status !== 'posted' && (
-                      <button
-                        onClick={() => handlePublishNow(post.id)}
-                        disabled={actionLoading}
-                        className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors"
-                        title="Publish Sekarang / Retry"
-                      >
-                        <Send className="w-4 h-4" />
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => handleDelete(post.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Hapus"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => fetchDetails(post.id)}
+                    className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                  >
+                    <span>Detail</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
@@ -213,10 +193,10 @@ export default function PostList() {
         </div>
       )}
 
-      {/* Details Modal (Fixed Responsive Container & Sticky Header) */}
+      {/* Detail & Action Modal */}
       {selectedPost && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
-          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl relative text-left max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header Sticky */}
             <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0 bg-slate-900">
               <div>
@@ -241,14 +221,15 @@ export default function PostList() {
                 </div>
                 {selectedPost.post.scheduled_at && (
                   <div className="text-right">
-                    <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Jadwal Tayang</span>
+                    <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Jadwal Tayang (WIB)</span>
                     <p className="text-xs font-semibold text-amber-400">
                       {new Date(selectedPost.post.scheduled_at).toLocaleString('id-ID', {
+                        timeZone: 'Asia/Jakarta',
                         day: 'numeric',
                         month: 'short',
                         hour: '2-digit',
                         minute: '2-digit'
-                      })}
+                      })} WIB
                     </p>
                   </div>
                 )}

@@ -255,25 +255,34 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       return { success: true, message: 'Antrean mencukupi.', log: logSteps };
     }
 
-    // 6. PHASE 6: Dynamic Selection & Scheduling Pipeline
+    // 6. PHASE 6: Dynamic Selection & Scheduling Pipeline (Presisi Waktu Indonesia Barat - WIB / UTC+7)
     const createdPosts = [];
-    const now = new Date();
+    const nowUtc = Date.now();
 
     for (let i = 0; i < postsToGenerate; i++) {
       const slotIndex = (scheduledCount + i) % config.default_time_slots.length;
       const slot = config.default_time_slots[slotIndex];
+      const dayOffset = Math.floor((scheduledCount + i) / config.default_time_slots.length);
 
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + Math.floor((scheduledCount + i) / config.default_time_slots.length));
-      targetDate.setHours(slot.hour, slot.minute, 0, 0);
+      // Hitung tanggal UTC yang tepat untuk jam WIB (WIB = UTC + 7 -> Jam UTC = Jam WIB - 7)
+      // Dapatkan hari ini dalam WIB
+      const wibNow = new Date(Date.now() + 7 * 3600 * 1000);
+      const targetWibYear = wibNow.getUTCFullYear();
+      const targetWibMonth = wibNow.getUTCMonth();
+      const targetWibDate = wibNow.getUTCDate() + dayOffset;
 
-      if (targetDate.getTime() <= now.getTime()) {
-        targetDate.setDate(targetDate.getDate() + 1);
+      // Buat Date UTC dari target WIB (Year, Month, Date, Hour - 7, Minute)
+      let targetDate = new Date(Date.UTC(targetWibYear, targetWibMonth, targetWibDate, slot.hour - 7, slot.minute, 0, 0));
+
+      // Jika slot hari ini sudah lewat waktu sekarang, jadwalkan untuk hari berikutnya
+      if (targetDate.getTime() <= nowUtc) {
+        targetDate = new Date(Date.UTC(targetWibYear, targetWibMonth, targetWibDate + 1, slot.hour - 7, slot.minute, 0, 0));
       }
 
       // Pilih Akun Medsos Sasaran (FB / Threads)
       const targetAccount = socialAccounts[i % socialAccounts.length];
       const platform = targetAccount.platform || 'facebook';
+
 
       // Dynamic Pool Selection
       let selectedProduct = null;
@@ -308,7 +317,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       // 6.3. Generate Shortlink
       const shortlinkUrl = await createPostShortlink(selectedProduct, platform, userId);
 
-      // 6.4. Generate Content & Copywriting (Clean text without asterisks)
+      // 6.4. Generate Content & Copywriting (Clean text with Indonesian Time Dynamics)
       const postDraft = await generatePostContent({
         product: selectedProduct,
         profile,
@@ -316,7 +325,13 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
         angle: profile.recommended_angles?.[i % profile.recommended_angles.length] || 'Problem-Agitate-Solution',
         objective: 'clicks',
         shortlinkUrl,
+        sessionInfo: {
+          session: slot.session || 'Sesi',
+          hour: slot.hour || 12,
+          minute: slot.minute || 0
+        }
       });
+
 
       // 6.5. Semantic Content Fingerprint Anti-Duplication Check
       const recentPosts = await getRecentPlatformPosts(userId, platform, 7);

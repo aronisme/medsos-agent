@@ -2,13 +2,17 @@ const { callMistralAI } = require('./aiQueueService');
 const { selectTemplateByBandit, fillTemplatePlaceholders } = require('./templateService');
 const { generateContentFingerprint } = require('./contentFingerprint');
 
-const COPYWRITER_SYSTEM_PROMPT = `Kamu adalah Senior Copywriter & Direct Response Marketer khusus Social Media Affiliate Marketing (Facebook, Threads).
-Tugasmu adalah meracik copywriting yang sangat menarik, natural, tidak terkesan kaku atau robotik, dan memiliki Call To Action (CTA) klik link yang kuat.
+const COPYWRITER_SYSTEM_PROMPT = `Kamu adalah Senior Copywriter & Direct Response Marketer khusus Social Media Affiliate Marketing di Indonesia (Facebook, Threads).
+Tugasmu adalah meracik copywriting yang sangat menarik, natural dalam Bahasa Indonesia sehari-hari, tidak terkesan kaku atau robotik, memahami kebiasaan belanja online masyarakat Indonesia (COD, Gratis Ongkir, Flash Sale, Promo Gajian), dan memiliki Call To Action (CTA) klik link yang kuat.
 
 ATURAN WAJIB PENULISAN:
 1. JANGAN PERNAH MENGGUNAKAN TANDA BINTANG ** atau * atau format markdown apapun! Tulis langsung teks bersih dan jelas.
 2. Gunakan simbol bullet biasa (•) untuk daftar keunggulan tanpa tanda bintang.
-3. Sesuaikan tone berdasarkan platform:
+3. Pahami konteks waktu Indonesia (WIB):
+   - Sesi Pagi (07:00 - 09:00 WIB): Gaya bahasa segar menyambut aktivitas pagi / persiapan kerja / kuliah.
+   - Sesi Siang (11:30 - 13:30 WIB): Gaya bahasa santai jam istirahat makan siang / rehat sejenak.
+   - Sesi Malam (19:00 - 21:00 WIB): Gaya bahasa santai waktu rebahan malam / santai santai / waktu checkout Shopee.
+4. Sesuaikan tone berdasarkan platform:
    - Facebook: Storytelling mengalir, relatable, emosional, informasi harga & promo jelas.
    - Threads: Punchy, to-the-point, santai seperti obrolan teman, direct hook 1-2 baris.
 
@@ -45,6 +49,7 @@ function cleanCaptionText(text = '') {
  * @param {string} [opts.angle] - Sudut pandang copy
  * @param {string} [opts.objective] - 'clicks' | 'engagement'
  * @param {string} opts.shortlinkUrl - URL shortlink afiliasi
+ * @param {Object} [opts.sessionInfo] - { session: 'Pagi'|'Siang'|'Malam', hour: number }
  * @param {Array} [opts.excludedTemplateIds] - Template yang dihindari (anti-duplikasi)
  * @returns {Promise<Object>} { caption, template_id, template_name, hook_type, copy_angle, content_fingerprint }
  */
@@ -55,6 +60,7 @@ async function generatePostContent({
   angle = 'Problem-Agitate-Solution',
   objective = 'clicks',
   shortlinkUrl,
+  sessionInfo = { session: 'Siang', hour: 12 },
   excludedTemplateIds = []
 }) {
   try {
@@ -68,11 +74,12 @@ async function generatePostContent({
 
     const activeAngle = angle || template.angle || 'Problem-Agitate-Solution';
 
-    // 2. Generate Hook & Copy Components via AI
+    // 2. Generate Hook & Copy Components via AI dengan Konteks Waktu Indonesia
     const userPrompt = [
       `Produk: ${product.title}`,
       `Niche: ${profile?.niche || 'Umum'}`,
-      `Target Persona: ${profile?.target_audience || 'Pembeli Online'}`,
+      `Target Persona: ${profile?.target_audience || 'Pembeli Online Indonesia'}`,
+      `Konteks Waktu Tayang: Sesi ${sessionInfo.session || 'Siang'} (${sessionInfo.hour || 12}:00 WIB)`,
       `Pain Points: ${(profile?.pain_points || []).join(', ')}`,
       `Keunggulan (USP): ${(profile?.usp || []).join(', ')}`,
       `Harga Asli: Rp ${Number(product.original_price || product.price || 0).toLocaleString('id-ID')}`,
@@ -82,6 +89,7 @@ async function generatePostContent({
       `Sudut Pandang (Angle): ${activeAngle}`,
       `Objective: ${objective}`
     ].join('\n');
+
 
     let parsedCopy = null;
     try {
