@@ -58,23 +58,45 @@ async function updateAgentConfig(userId, updateData) {
   }
 }
 
+const { buildAffiliateLink } = require('../../routes/affiliate');
+
 /**
- * Helper untuk membuat shortlink affiliate khusus postingan
+ * Helper untuk membuat link afiliasi Shopee resmi + shortlink internal khusus postingan
  */
 async function createPostShortlink(product, platform, userId) {
   try {
     const shortCode = 'r_' + crypto.randomBytes(3).toString('hex');
     const now = new Date().toISOString();
-    const destinationUrl = product.affiliate_url || product.product_url || 'https://shopee.co.id';
+    
+    const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338';
+    const tracking = {
+      source: platform,
+      campaign: 'auto_agent',
+      content: product.id || 'shopee_product',
+      custom_1: 'medsos_agent'
+    };
+
+    const rawUrl = product.product_url || product.affiliate_url || 'https://shopee.co.id';
+    
+    // Otomatis ubah menjadi Shopee Affiliate link jika belum berformat an_redir
+    let destinationUrl = product.affiliate_url;
+    if (!destinationUrl || !destinationUrl.includes('an_redir')) {
+      try {
+        destinationUrl = buildAffiliateLink(rawUrl, tracking, affiliateId);
+      } catch {
+        destinationUrl = rawUrl;
+      }
+    }
 
     await db.collection('short_links').doc(shortCode).set({
       code: shortCode,
       user_id: userId,
-      product_id: product.id,
-      title: product.title,
+      product_id: product.id || '',
+      title: product.title || 'Shopee Product',
       product_url: product.product_url || '',
       destination_url: destinationUrl,
       platform: platform,
+      tracking: tracking,
       total_clicks: 0,
       human_clicks: 0,
       created_at: now,
@@ -88,6 +110,7 @@ async function createPostShortlink(product, platform, userId) {
     return product.affiliate_url || product.product_url || '';
   }
 }
+
 
 /**
  * Menjalankan 1 Putaran Siklus Otonom (Autonomous Execution Cycle)

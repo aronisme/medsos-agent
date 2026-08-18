@@ -178,3 +178,6 @@ router.post('/batch', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.buildAffiliateLink = buildAffiliateLink;
+module.exports.normalizeSubId = normalizeSubId;
+
