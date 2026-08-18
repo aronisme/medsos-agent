@@ -16,7 +16,9 @@ export default function LoginModal() {
     try {
       await login(email, password);
     } catch (err) {
-      setError(err.response?.data?.error || 'Email atau password salah.');
+      const errVal = err.response?.data?.error;
+      const msg = typeof errVal === 'string' ? errVal : (errVal?.message || err.message || 'Email atau password salah.');
+      setError(msg);
     } finally {
       setLoading(false);
     }
