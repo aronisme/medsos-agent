@@ -128,4 +128,15 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// POST /api/accounts/refresh-tokens – Manual trigger token health check & refresh
+const { autoRefreshAllTokens } = require('../services/tokenRefreshService');
+router.post('/refresh-tokens', async (req, res) => {
+  try {
+    const results = await autoRefreshAllTokens();
+    res.json({ success: true, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

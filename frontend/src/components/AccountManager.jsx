@@ -27,6 +27,8 @@ export default function AccountManager() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
 
+  const [refreshingTokens, setRefreshingTokens] = useState(false);
+
   const fetchAccounts = async () => {
     setLoading(true);
     try {
@@ -36,6 +38,27 @@ export default function AccountManager() {
       console.error('Gagal mengambil data akun', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefreshTokens = async () => {
+    setRefreshingTokens(true);
+    setMessage(null);
+    try {
+      const res = await api.post('/accounts/refresh-tokens');
+      const count = res.data?.results?.filter(r => r.success)?.length || 0;
+      setMessage({
+        type: 'success',
+        text: `Sukses! ${count} akun (FB, IG, Threads) berhasil divalidasi & diperpanjang masa aktif tokennya.`
+      });
+      fetchAccounts();
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        text: 'Gagal memperbarui token: ' + (err.response?.data?.error || err.message)
+      });
+    } finally {
+      setRefreshingTokens(false);
     }
   };
 
@@ -100,16 +123,28 @@ export default function AccountManager() {
             <Share2 className="w-5 h-5 text-indigo-400" />
             <span>Manajemen Akun Sosial Media</span>
           </h2>
-          <p className="text-xs text-slate-400">Hubungkan Halaman Facebook Page dan Akun Instagram Bisnis Anda</p>
+          <p className="text-xs text-slate-400">Hubungkan Facebook Page, Instagram Bisnis, dan Akun Threads Anda</p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-2.5 rounded-xl gradient-btn text-xs font-bold flex items-center gap-2 shadow-lg self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah / Hubungkan Akun</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <button
+            onClick={handleRefreshTokens}
+            disabled={refreshingTokens}
+            className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-sm"
+            title="Validasi dan perpanjang token semua akun aktif (FB, IG, Threads)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${refreshingTokens ? 'animate-spin' : ''}`} />
+            <span>{refreshingTokens ? 'Memperbarui...' : 'Auto-Refresh Token'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2.5 rounded-xl gradient-btn text-xs font-bold flex items-center gap-2 shadow-lg"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah / Hubungkan Akun</span>
+          </button>
+        </div>
       </div>
 
       {message && (

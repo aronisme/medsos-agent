@@ -1,9 +1,11 @@
 const { db } = require('../config/firebase');
 const { publishPostNow } = require('../services/postService');
 const { runAutonomousCycle, getAgentConfig } = require('../services/agent/orchestratorService');
+const { autoRefreshAllTokens } = require('../services/tokenRefreshService');
 
 // In-memory timestamp untuk rate-limiting AI cycle runner
 let lastAutonomousCycleRun = 0;
+let lastTokenRefreshRun = 0;
 
 /**
  * Memproses postingan terjadwal yang sudah waktunya.
@@ -72,6 +74,18 @@ async function processScheduledPosts() {
           }
         } catch (autoErr) {
           console.error('[scheduler] Error running background autonomous cycle:', autoErr.message);
+        }
+      });
+    // 3. TOKEN HEALTH & AUTO-REFRESH (Cek setiap 12 jam untuk FB, IG, dan Threads):
+    const twelveHours = 12 * 60 * 60 * 1000;
+    if (now - lastTokenRefreshRun >= twelveHours) {
+      lastTokenRefreshRun = now;
+      setImmediate(async () => {
+        try {
+          console.log('[scheduler] Menjalankan rutin Auto-Refresh Token (FB, IG, Threads)...');
+          await autoRefreshAllTokens();
+        } catch (tokErr) {
+          console.error('[scheduler] Error auto-refreshing social tokens:', tokErr.message);
         }
       });
     }
