@@ -9,6 +9,7 @@ import {
   Terminal,
   FolderArchive,
   Link as LinkIcon,
+  BarChart3,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
@@ -16,6 +17,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'composer', label: 'Buat Postingan', icon: PenTool, highlight: true },
     { id: 'affiliate_products', label: 'Produk Affiliate', icon: FolderArchive, highlight: true },
+    { id: 'link_analytics', label: 'Analitik Link', icon: BarChart3, highlight: true },
     { id: 'posts', label: 'Kelola & Jadwal', icon: Calendar },
     { id: 'accounts', label: 'Akun Sosmed', icon: Share2 },
     { id: 'templates', label: 'Template Caption', icon: FileText },

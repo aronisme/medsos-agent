@@ -11,6 +11,7 @@ import TemplateManager from './components/TemplateManager';
 import ApiDocumentation from './components/ApiDocumentation';
 import AffiliateGenerator from './components/AffiliateGenerator';
 import AffiliateProducts from './components/AffiliateProducts';
+import LinkAnalytics from './components/LinkAnalytics';
 import api from './api/client';
 
 export default function App() {
@@ -78,6 +79,10 @@ export default function App() {
                 setActiveTab('shopee_affiliate');
               }}
             />
+          )}
+
+          {activeTab === 'link_analytics' && (
+            <LinkAnalytics />
           )}
 
           {activeTab === 'posts' && <PostList />}

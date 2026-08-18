@@ -57,36 +57,52 @@ const buildAffiliateLink = (productUrl, tracking, affiliateId) => {
 // Generate a single affiliate link and short URL
 router.post('/', async (req, res) => {
   try {
-    const { product_url, tracking } = req.body;
+    const {
+      product_url,
+      title,
+      product_id,
+      image_url,
+      price,
+      tracking
+    } = req.body || {};
     
     if (!product_url) {
       return res.status(400).json({ success: false, error: 'product_url is required' });
     }
 
-    // Use environment variable for single-account MVP
-    const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338'; // Defaulting to the user's ID for safety if env not set
-
+    const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338';
     const affiliateUrl = buildAffiliateLink(product_url, tracking, affiliateId);
     
     // Generate short code
     const shortCode = generateShortCode();
+    const now = new Date().toISOString();
     
-    // Save to Firestore
+    // Save to Firestore with full rich metadata
     await db.collection('short_links').doc(shortCode).set({
-      destination_url: affiliateUrl,
+      code: shortCode,
+      user_id: req.user?.id || 'system',
+      product_id: product_id || '',
+      title: title || 'Shopee Product',
+      image_url: image_url || '',
+      price: price || 0,
       product_url: product_url,
+      destination_url: affiliateUrl,
       tracking: tracking || null,
-      created_at: new Date()
+      total_clicks: 0,
+      human_clicks: 0,
+      bot_clicks: 0,
+      created_at: now,
+      updated_at: now
     });
 
-    // The short url will point to our backend's redirect route
     const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
     const shortUrl = `${baseUrl}/s/${shortCode}`;
 
     res.json({
       success: true,
       short_url: shortUrl,
-      short_code: shortCode
+      short_code: shortCode,
+      affiliate_url: affiliateUrl
     });
 
   } catch (error) {
@@ -99,7 +115,7 @@ router.post('/', async (req, res) => {
 // Generate multiple affiliate links
 router.post('/batch', async (req, res) => {
   try {
-    const { products, tracking } = req.body;
+    const { products, tracking } = req.body || {};
     
     if (!Array.isArray(products) || products.length === 0) {
       return res.status(400).json({ success: false, error: 'products array is required' });
@@ -107,27 +123,41 @@ router.post('/batch', async (req, res) => {
 
     const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338';
     const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const now = new Date().toISOString();
     
     const results = [];
     const batch = db.batch();
 
     for (const item of products) {
-      if (!item.url) continue;
+      const url = item.url || item.product_url;
+      if (!url) continue;
 
-      const affiliateUrl = buildAffiliateLink(item.url, tracking, affiliateId);
+      const affiliateUrl = buildAffiliateLink(url, tracking, affiliateId);
       const shortCode = generateShortCode();
       const shortUrl = `${baseUrl}/s/${shortCode}`;
 
       const docRef = db.collection('short_links').doc(shortCode);
       batch.set(docRef, {
+        code: shortCode,
+        user_id: req.user?.id || 'system',
+        product_id: item.product_id || item.id || '',
+        title: item.title || item.name || 'Shopee Product',
+        image_url: item.image || item.image_url || (Array.isArray(item.images) ? item.images[0] : ''),
+        price: item.price || 0,
+        product_url: url,
         destination_url: affiliateUrl,
-        product_url: item.url,
         tracking: tracking || null,
-        created_at: new Date()
+        total_clicks: 0,
+        human_clicks: 0,
+        bot_clicks: 0,
+        created_at: now,
+        updated_at: now
       });
 
       results.push({
-        product_url: item.url,
+        title: item.title || item.name || 'Shopee Product',
+        product_url: url,
+        affiliate_url: affiliateUrl,
         short_url: shortUrl,
         short_code: shortCode
       });
