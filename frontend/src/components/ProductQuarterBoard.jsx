@@ -177,35 +177,45 @@ export default function ProductQuarterBoard() {
         ))}
       </div>
 
-      {/* Kanban Board Columns Container */}
-      <div className="grid grid-cols-1 md:grid-cols-7 gap-3.5 items-start overflow-x-auto pb-6 custom-scrollbar">
+      {/* Kanban Board Columns Container (Horizontal Scroll Flex Container) */}
+      <div className="flex gap-4 items-start overflow-x-auto pb-6 pt-1 custom-scrollbar min-w-0 w-full">
         {columns.map((col) => {
           if (activeColumn !== 'ALL' && activeColumn !== col.id) return null;
 
           const rawProducts = quarterStatus?.pools?.[col.id] || [];
           const productList = filterProducts(rawProducts);
 
+          const colBadgeColors = {
+            slate: 'bg-slate-800 text-slate-300 border-slate-700',
+            indigo: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+            cyan: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+            emerald: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+            purple: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+            amber: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+            rose: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+          };
+
           return (
             <div
               key={col.id}
-              className="flex flex-col bg-slate-900/50 border border-slate-800/80 rounded-2xl min-w-[260px] md:min-w-[190px] max-h-[75vh] overflow-hidden"
+              className="flex flex-col bg-slate-900/60 border border-slate-800 rounded-3xl w-72 shrink-0 max-h-[75vh] overflow-hidden shadow-xl"
             >
               {/* Column Header */}
-              <div className="p-3 border-b border-slate-800/80 bg-slate-950/40">
+              <div className="p-4 border-b border-slate-800/80 bg-slate-950/50 flex flex-col gap-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-slate-200 line-clamp-1">{col.title}</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">
+                  <span className="text-xs font-extrabold text-slate-100 tracking-tight">{col.title}</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${colBadgeColors[col.color] || colBadgeColors.slate}`}>
                     {productList.length}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-0.5">{col.desc}</p>
+                <p className="text-[11px] text-slate-400 font-medium">{col.desc}</p>
               </div>
 
               {/* Column Cards */}
-              <div className="p-2 space-y-2 overflow-y-auto custom-scrollbar flex-1">
+              <div className="p-3 space-y-2.5 overflow-y-auto custom-scrollbar flex-1 max-h-[calc(75vh-80px)]">
                 {productList.length === 0 ? (
-                  <div className="py-8 text-center text-slate-600 text-[11px]">
-                    Kosong
+                  <div className="py-12 text-center text-slate-600 text-xs font-medium border border-dashed border-slate-800/80 rounded-2xl">
+                    Tidak ada produk
                   </div>
                 ) : (
                   productList.map((prod) => {
@@ -216,35 +226,45 @@ export default function ProductQuarterBoard() {
                       <div
                         key={prod.id}
                         onClick={() => setSelectedProduct(prod)}
-                        className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/90 hover:border-indigo-500/50 cursor-pointer transition-all hover:shadow-lg group"
+                        className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/90 hover:border-indigo-500/60 hover:bg-slate-950 cursor-pointer transition-all hover:shadow-xl hover:-translate-y-0.5 group"
                       >
                         {/* Thumbnail & Title */}
-                        <div className="flex gap-2.5 mb-2">
+                        <div className="flex gap-3 mb-2.5">
                           {thumb ? (
                             <img
                               src={thumb}
                               alt=""
-                              className="w-12 h-12 rounded-lg object-cover bg-slate-800 shrink-0"
+                              className="w-14 h-14 rounded-xl object-cover bg-slate-800 shrink-0 border border-slate-800"
                             />
                           ) : (
-                            <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center text-slate-600 shrink-0 text-xs font-bold">
+                            <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 shrink-0 text-base font-bold">
                               🛍️
                             </div>
                           )}
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-semibold text-slate-200 line-clamp-2 group-hover:text-indigo-300 transition-colors leading-tight">
+                          <div className="min-w-0 flex-1 flex flex-col justify-between">
+                            <h4 className="text-xs font-bold text-slate-200 line-clamp-2 group-hover:text-indigo-300 transition-colors leading-tight">
                               {prod.title}
                             </h4>
-                            <span className="text-[10px] text-emerald-400 font-bold block mt-1">
-                              Rp {Number(prod.price || 0).toLocaleString('id-ID')}
-                            </span>
+                            <div className="flex items-center justify-between gap-1 mt-1">
+                              <span className="text-xs text-emerald-400 font-extrabold">
+                                Rp {Number(prod.price || 0).toLocaleString('id-ID')}
+                              </span>
+                              {prod.discount && (
+                                <span className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                  {prod.discount}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
                         {/* Card Performance Pill */}
-                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
-                          <span>Tes: {summary.total_attempts || 0}x</span>
-                          <span className="text-emerald-400 font-semibold">{summary.total_clicks || 0} Klik</span>
+                        <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                          <span className="text-slate-500 font-medium">Uji: <strong className="text-slate-300">{summary.total_attempts || 0}x</strong></span>
+                          <span className="text-emerald-400 font-bold flex items-center gap-1">
+                            <MousePointerClick className="w-3 h-3" />
+                            {summary.total_clicks || 0} Klik
+                          </span>
                         </div>
                       </div>
                     );
@@ -255,6 +275,7 @@ export default function ProductQuarterBoard() {
           );
         })}
       </div>
+
 
       {/* Deep Memory Inspector Modal */}
       {selectedProduct && (

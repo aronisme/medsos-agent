@@ -56,12 +56,13 @@ export default function App() {
       <Navbar health={health} />
 
       {/* Body Content */}
-      <div className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto">
+      <div className="flex-1 flex flex-col md:flex-row max-w-[1680px] w-full mx-auto">
         {/* Sidebar */}
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
         {/* Main Workspace */}
-        <main className="flex-1 p-4 lg:p-8 min-w-0">
+        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-x-hidden">
+
           {activeTab === 'dashboard' && <StatsOverview setActiveTab={setActiveTab} />}
           {activeTab === 'agent_dashboard' && <AgentDashboard setActiveTab={setActiveTab} />}
           {activeTab === 'product_lifecycle' && <ProductQuarterBoard />}
