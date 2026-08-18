@@ -221,7 +221,7 @@ router.post('/bulk', async (req, res) => {
           productUrl = '';
         }
       }
-      const affiliateUrl = rawItem.affiliate_url || (productUrl ? productUrl : '');
+      const affiliateUrl = rawItem.affiliate_url || '';
       const description = formatted['Description'] || rawItem.description || raw.description || '';
       const productVideo = formatted['Product Video'] || rawItem.product_video || rawItem.video || '';
       const brand = formatted['Brand'] || rawItem.brand || raw.brand || '';
@@ -301,7 +301,7 @@ router.post('/bulk', async (req, res) => {
         shop_location: String(shopLocation || 'Indonesia'),
         category: String(rawItem.category || formatted['Category'] || 'Shopee Affiliate'),
         product_url: cleanProductUrl,
-        affiliate_url: String(affiliateUrl || cleanProductUrl),
+        affiliate_url: String(affiliateUrl || ''),
         description: String(description || ''),
         images: images,
         videos: videos,
