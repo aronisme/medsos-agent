@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../config/firebase');
 const { authRequired } = require('../middleware/auth');
+const { cleanShopeeProductUrl } = require('./affiliate');
 const router = express.Router();
 
 router.use(authRequired);
@@ -148,7 +149,7 @@ router.post('/', async (req, res) => {
       shop_name: String(shop_name || ''),
       shop_location: String(shop_location || ''),
       category: String(category || 'Umum'),
-      product_url: String(product_url || ''),
+      product_url: cleanShopeeProductUrl(String(product_url || '')),
       affiliate_url: String(affiliate_url || ''),
       description: String(description || ''),
       images: Array.isArray(images) ? images : [],
@@ -282,7 +283,7 @@ router.post('/bulk', async (req, res) => {
         notes = `Diimpor otomatis dari Shopee Scraper${brand ? ` - Brand: ${brand}` : ''}`;
       }
 
-      const cleanProductUrl = String(productUrl || '').trim();
+      const cleanProductUrl = cleanShopeeProductUrl(String(productUrl || ''));
       const existingDocId = cleanProductUrl ? existingUrlMap.get(cleanProductUrl) : null;
       
       const docRef = existingDocId 
@@ -379,7 +380,7 @@ router.put('/:id', async (req, res) => {
       shop_name: shop_name !== undefined ? String(shop_name) : existing.shop_name,
       shop_location: shop_location !== undefined ? String(shop_location) : existing.shop_location,
       category: category !== undefined ? String(category) : existing.category,
-      product_url: product_url !== undefined ? String(product_url) : existing.product_url,
+      product_url: product_url !== undefined ? cleanShopeeProductUrl(String(product_url)) : existing.product_url,
       affiliate_url: affiliate_url !== undefined ? String(affiliate_url) : existing.affiliate_url,
       description: description !== undefined ? String(description) : existing.description,
       images: images !== undefined ? images : existing.images,

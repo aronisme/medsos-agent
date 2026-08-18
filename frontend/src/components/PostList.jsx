@@ -15,6 +15,7 @@ import {
   Instagram,
   Layers,
   AtSign,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function PostList() {

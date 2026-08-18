@@ -15,28 +15,81 @@ const generateShortCode = (length = 6) => {
 // Utility to normalize sub_id parts
 const normalizeSubId = (str) => {
   if (!str) return '';
-  return str.replace(/[-\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').substring(0, 50);
+  return String(str).replace(/[-\s]+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').substring(0, 50);
+};
+
+// Utility to clean and sanitize Shopee Product URLs
+const cleanShopeeProductUrl = (url = '') => {
+  if (!url || typeof url !== 'string') return '';
+  let trimmed = url.trim();
+  if (!trimmed) return '';
+
+  // Remove hash fragment (e.g., #/ or #modal)
+  trimmed = trimmed.split('#')[0].trim();
+
+  try {
+    const parsed = new URL(trimmed);
+
+    // If it's an an_redir link, extract original origin_link
+    if (parsed.hostname === 'shope.ee' || parsed.hostname === 's.shopee.co.id') {
+      const extractedOrigin = parsed.searchParams.get('origin_link');
+      if (extractedOrigin) {
+        return cleanShopeeProductUrl(decodeURIComponent(extractedOrigin));
+      }
+      return trimmed;
+    }
+
+    // If it's standard Shopee domain
+    if (parsed.hostname.includes('shopee.')) {
+      // Check /product/{shopId}/{itemId} pattern
+      const productMatch = parsed.pathname.match(/\/product\/(\d+)\/(\d+)/);
+      if (productMatch) {
+        return `https://${parsed.hostname}/product/${productMatch[1]}/${productMatch[2]}`;
+      }
+
+      // Check slug pattern *-i.{shopId}.{itemId}
+      const slugMatch = parsed.pathname.match(/-i\.(\d+)\.(\d+)/);
+      if (slugMatch) {
+        return `https://${parsed.hostname}${parsed.pathname}`;
+      }
+
+      // Clean noisy query params
+      const noisyParams = [
+        'extraParams', 'sp_atk', 'is_from_login', 'is_from_signup',
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+        'mmp_pid', 'uls_trackid', 'af_siteid', 'pid'
+      ];
+      noisyParams.forEach(p => parsed.searchParams.delete(p));
+      return parsed.toString();
+    }
+
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
 };
 
 // Main function to build the Shopee Affiliate Link
 const buildAffiliateLink = (productUrl, tracking, affiliateId) => {
-  let originLink = '';
-  const parsedInput = new URL(productUrl);
-  
-  if (parsedInput.hostname === 'shope.ee' || parsedInput.hostname === 's.shopee.co.id') {
-    const extractedOrigin = parsedInput.searchParams.get('origin_link');
-    if (extractedOrigin) {
-      originLink = decodeURIComponent(extractedOrigin);
-    } else {
-      originLink = productUrl;
-    }
-  } else {
-    originLink = productUrl;
-  }
+  if (!productUrl || typeof productUrl !== 'string') return '';
+  const trimmed = productUrl.trim();
+  if (!trimmed) return '';
 
-  const safeEncodedOrigin = encodeURIComponent(originLink);
-  
-  // Format sub_id using tracking object
+  const affiliate = affiliateId || process.env.SHOPEE_AFFILIATE_ID || '11328861338';
+
+  // If already a raw native Shopee shortlink without origin_link (e.g. s.shopee.co.id/aB3x or shope.ee/aB3x)
+  try {
+    const parsed = new URL(trimmed);
+    if ((parsed.hostname === 'shope.ee' || parsed.hostname === 's.shopee.co.id') && !parsed.searchParams.get('origin_link')) {
+      // It is already a final Shopee affiliate shortlink, do NOT re-wrap in an_redir
+      return trimmed;
+    }
+  } catch {}
+
+  const cleanUrl = cleanShopeeProductUrl(trimmed);
+  const safeEncodedOrigin = encodeURIComponent(cleanUrl || trimmed);
+
+  // Format sub_id using tracking object (remove trailing empty hyphens)
   let subIdParam = '';
   if (tracking) {
     const p1 = normalizeSubId(tracking.sub_publisher_id || tracking.source);
@@ -44,13 +97,18 @@ const buildAffiliateLink = (productUrl, tracking, affiliateId) => {
     const p3 = normalizeSubId(tracking.referral_source || tracking.content);
     const p4 = normalizeSubId(tracking.custom_1);
     const p5 = normalizeSubId(tracking.custom_2);
-    
-    if (p1 || p2 || p3 || p4 || p5) {
-      subIdParam = `&sub_id=${p1}-${p2}-${p3}-${p4}-${p5}`;
+
+    const parts = [p1, p2, p3, p4, p5];
+    while (parts.length > 0 && !parts[parts.length - 1]) {
+      parts.pop();
+    }
+
+    if (parts.length > 0) {
+      subIdParam = `&sub_id=${parts.join('-')}`;
     }
   }
 
-  return `https://s.shopee.co.id/an_redir?origin_link=${safeEncodedOrigin}&affiliate_id=${affiliateId}${subIdParam}`;
+  return `https://s.shopee.co.id/an_redir?origin_link=${safeEncodedOrigin}&affiliate_id=${affiliate}${subIdParam}`;
 };
 
 // POST /api/v1/affiliate/shopee
@@ -179,5 +237,6 @@ router.post('/batch', async (req, res) => {
 
 module.exports = router;
 module.exports.buildAffiliateLink = buildAffiliateLink;
+module.exports.cleanShopeeProductUrl = cleanShopeeProductUrl;
 module.exports.normalizeSubId = normalizeSubId;
 

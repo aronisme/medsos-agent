@@ -64,7 +64,7 @@ async function updateAgentConfig(userId, updateData) {
   }
 }
 
-const { buildAffiliateLink } = require('../../routes/affiliate');
+const { buildAffiliateLink, cleanShopeeProductUrl } = require('../../routes/affiliate');
 
 /**
  * Helper untuk membuat link afiliasi Shopee resmi + shortlink internal khusus postingan
@@ -82,29 +82,51 @@ async function createPostShortlink(product, platform, userId) {
       custom_1: 'medsos_agent'
     };
 
-    const rawUrl = product.product_url || product.affiliate_url || 'https://shopee.co.id';
-    
-    // Otomatis ubah menjadi Shopee Affiliate link jika belum berformat an_redir
-    let destinationUrl = product.affiliate_url;
-    if (!destinationUrl || !destinationUrl.includes('an_redir')) {
-      try {
-        destinationUrl = buildAffiliateLink(rawUrl, tracking, affiliateId);
-      } catch {
-        destinationUrl = rawUrl;
+    // Cari URL produk Shopee asli yang bersih
+    let rawUrl = '';
+    const validUrl = getValidShopeeProductUrl(product);
+    if (validUrl) {
+      rawUrl = validUrl;
+    } else if (product.product_url && typeof product.product_url === 'string' && product.product_url.startsWith('http')) {
+      rawUrl = cleanShopeeProductUrl(product.product_url);
+    } else if (product.affiliate_url && typeof product.affiliate_url === 'string' && product.affiliate_url.startsWith('http') && !product.affiliate_url.includes('/s/')) {
+      rawUrl = cleanShopeeProductUrl(product.affiliate_url);
+    }
+
+    if (!rawUrl) {
+      const itemId = product.item_id || product.raw_item_id;
+      const shopId = product.shop_id || product.raw_shop_id || 0;
+      if (itemId) {
+        rawUrl = `https://shopee.co.id/product/${shopId}/${itemId}`;
+      } else {
+        rawUrl = 'https://shopee.co.id';
       }
     }
+
+    // Bangun URL tujuan Shopee Affiliate resmi
+    const destinationUrl = buildAffiliateLink(rawUrl, tracking, affiliateId);
+
+    // Ambil gambar utama produk jika ada
+    let imageUrl = '';
+    if (product.image) imageUrl = product.image;
+    else if (product.image_url) imageUrl = product.image_url;
+    else if (Array.isArray(product.images) && product.images.length > 0) imageUrl = product.images[0];
+    else if (Array.isArray(product.media) && product.media.length > 0) imageUrl = product.media[0]?.url || '';
 
     await db.collection('short_links').doc(shortCode).set({
       code: shortCode,
       user_id: userId,
       product_id: product.id || '',
       title: product.title || 'Shopee Product',
-      product_url: product.product_url || '',
+      image_url: imageUrl,
+      price: product.price || 0,
+      product_url: rawUrl,
       destination_url: destinationUrl,
       platform: platform,
       tracking: tracking,
       total_clicks: 0,
       human_clicks: 0,
+      bot_clicks: 0,
       created_at: now,
       updated_at: now
     });
@@ -118,14 +140,22 @@ async function createPostShortlink(product, platform, userId) {
 }
 
 /**
- * Helper untuk memvalidasi dan merekonstruksi URL produk Shopee yang sah
+ * Helper untuk memvalidasi dan merekonstruksi URL produk Shopee yang sah & bersih
  */
 function getValidShopeeProductUrl(product) {
   if (!product) return null;
-  let url = String(product.product_url || product.affiliate_url || '').trim();
+  let url = String(product.product_url || '').trim();
   
   if (url && (url.startsWith('http://') || url.startsWith('https://')) && url !== 'https://shopee.co.id') {
-    return url;
+    // Jangan gunakan jika itu shortlink internal
+    if (!url.includes('/s/')) {
+      return cleanShopeeProductUrl(url);
+    }
+  }
+
+  const affUrl = String(product.affiliate_url || '').trim();
+  if (affUrl && (affUrl.startsWith('http://') || affUrl.startsWith('https://')) && !affUrl.includes('/s/')) {
+    return cleanShopeeProductUrl(affUrl);
   }
   
   const itemId = product.item_id || product.raw_item_id;
