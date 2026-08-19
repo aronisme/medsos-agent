@@ -5,11 +5,6 @@ const { autoRefreshAllTokens } = require('../services/tokenRefreshService');
 const { syncAllPostsAnalytics } = require('../services/postAnalytics/syncService');
 const { evaluateExperiment } = require('../services/agent/experimentService');
 
-// In-memory timestamp untuk rate-limiting background workers
-let lastAutonomousCycleRun = 0;
-let lastTokenRefreshRun = 0;
-let lastAnalyticsSyncRun = 0;
-
 /**
  * Memproses postingan terjadwal yang sudah waktunya.
  * Fungsi ini dipanggil otomatis setiap menit oleh Google Apps Script / Cron.
@@ -17,12 +12,14 @@ let lastAnalyticsSyncRun = 0;
 async function processScheduledPosts() {
   const results = [];
   try {
+    const now = Date.now();
+
     // 1. FAST-PATH (Dijalankan setiap menit): Publish postingan yang jatuh tempo
+    // Menggunakan limit(10) untuk menghemat kuota Firestore reads
     const snapshot = await db.collection('posts')
       .where('status', '==', 'scheduled')
+      .limit(10)
       .get();
-      
-    const now = Date.now();
 
     if (!snapshot.empty) {
       for (const doc of snapshot.docs) {
@@ -49,11 +46,33 @@ async function processScheduledPosts() {
       }
     }
 
-    // 2. ANALYTICS AUTO-SYNC (Cek setiap 30 menit):
-    // Menarik data metrik Meta & klik link terbaru secara background tanpa harus klik manual
+    // 2. PERSISTENT SERVERLESS RATE-LIMITING LOCK
+    // Pada serverless (Vercel), variabel in-memory akan ter-reset di setiap cold start (1 menit sekali).
+    // Menggunakan dokumen Firestore 'scheduler_locks' agar throttling 15m / 30m / 12h benar-benar persisten!
+    const lockRef = db.collection('system_state').doc('scheduler_locks');
+    let lockData = {};
+    try {
+      const lockSnap = await lockRef.get();
+      if (lockSnap.exists) {
+        lockData = lockSnap.data() || {};
+      }
+    } catch (lockErr) {
+      console.warn('[scheduler] Warning reading lock document:', lockErr.message);
+    }
+
+    const lastAnalyticsSync = Number(lockData.last_analytics_sync_epoch) || 0;
+    const lastAutonomousCycle = Number(lockData.last_autonomous_cycle_epoch) || 0;
+    const lastTokenRefresh = Number(lockData.last_token_refresh_epoch) || 0;
+
     const thirtyMinutes = 30 * 60 * 1000;
-    if (now - lastAnalyticsSyncRun >= thirtyMinutes) {
-      lastAnalyticsSyncRun = now;
+    const fifteenMinutes = 15 * 60 * 1000;
+    const twelveHours = 12 * 60 * 60 * 1000;
+
+    const updateLocks = {};
+
+    // Check 1: Auto-Sync Analitik Meta & Link (Persisten setiap 30 menit)
+    if (now - lastAnalyticsSync >= thirtyMinutes) {
+      updateLocks.last_analytics_sync_epoch = now;
       setImmediate(async () => {
         try {
           const accountsSnap = await db.collection('social_accounts')
@@ -68,12 +87,13 @@ async function processScheduledPosts() {
 
           for (const uid of activeUserIds) {
             console.log(`[scheduler] Menjalankan Auto-Sync Analitik Meta & Link untuk User: ${uid}`);
-            await syncAllPostsAnalytics(uid, { limit: 30 });
+            await syncAllPostsAnalytics(uid, { limit: 15 });
           }
 
           // Evaluasi eksperimen A/B yang sedang berjalan
           const expSnap = await db.collection('experiments')
             .where('status', '==', 'running')
+            .limit(10)
             .get();
 
           for (const expDoc of expSnap.docs) {
@@ -85,15 +105,11 @@ async function processScheduledPosts() {
       });
     }
 
-    // 3. SLOW-PATH dengan Smart Throttling (Cek setiap 15 menit):
-    // Jika antrean postingan kosong atau kurang dari kuota, jalankan Autonomous Cycle
-    const fifteenMinutes = 15 * 60 * 1000;
-    if (now - lastAutonomousCycleRun >= fifteenMinutes) {
-      lastAutonomousCycleRun = now;
-      // Jalankan secara asynchronous di background agar response ke GAS tetap instan
+    // Check 2: Autonomous Cycle (Persisten setiap 15 menit)
+    if (now - lastAutonomousCycle >= fifteenMinutes) {
+      updateLocks.last_autonomous_cycle_epoch = now;
       setImmediate(async () => {
         try {
-          // Ambil user yang memiliki akun aktif
           const accountsSnap = await db.collection('social_accounts')
             .where('is_active', 'in', [1, true, '1'])
             .get();
@@ -117,10 +133,9 @@ async function processScheduledPosts() {
       });
     }
 
-    // 4. TOKEN HEALTH & AUTO-REFRESH (Cek setiap 12 jam untuk FB, IG, dan Threads):
-    const twelveHours = 12 * 60 * 60 * 1000;
-    if (now - lastTokenRefreshRun >= twelveHours) {
-      lastTokenRefreshRun = now;
+    // Check 3: Token Auto-Refresh (Persisten setiap 12 jam)
+    if (now - lastTokenRefresh >= twelveHours) {
+      updateLocks.last_token_refresh_epoch = now;
       setImmediate(async () => {
         try {
           console.log('[scheduler] Menjalankan rutin Auto-Refresh Token (FB, IG, Threads)...');
@@ -129,6 +144,11 @@ async function processScheduledPosts() {
           console.error('[scheduler] Error auto-refreshing social tokens:', tokErr.message);
         }
       });
+    }
+
+    // Simpan timestamp lock terbaru jika ada background task yang dipicu
+    if (Object.keys(updateLocks).length > 0) {
+      await lockRef.set(updateLocks, { merge: true });
     }
 
   } catch (e) {
