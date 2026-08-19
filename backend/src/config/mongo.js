@@ -5,14 +5,23 @@
  * API compatibility (collection, doc, where, orderBy, limit, get, set, update, FieldValue.increment, batch).
  */
 
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
 const { MongoClient } = require('mongodb');
 const crypto = require('crypto');
 
 let client = null;
 let database = null;
 
-const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || '';
-const DB_NAME = process.env.MONGODB_DB_NAME || 'medsos_agent';
+function getMongoUri() {
+  return process.env.MONGODB_URI || process.env.MONGO_URL || '';
+}
+
+function getDbName() {
+  return process.env.MONGODB_DB_NAME || 'medsos_agent';
+}
 
 function generateDocId() {
   return crypto.randomBytes(10).toString('hex');
@@ -23,21 +32,24 @@ function generateDocId() {
  */
 async function getDb() {
   if (database) return database;
-  if (!MONGODB_URI) {
+  const uri = getMongoUri();
+  if (!uri) {
     throw new Error('MONGODB_URI environment variable is not defined.');
   }
 
+  const dbName = getDbName();
+
   if (!client) {
-    client = new MongoClient(MONGODB_URI, {
+    client = new MongoClient(uri, {
       maxPoolSize: 20,
       minPoolSize: 2,
       serverSelectionTimeoutMS: 8000,
     });
     await client.connect();
-    console.log(`[MongoDB] Connected successfully to cluster (DB: ${DB_NAME})`);
+    console.log(`[MongoDB] Connected successfully to cluster (DB: ${dbName})`);
   }
 
-  database = client.db(DB_NAME);
+  database = client.db(dbName);
   return database;
 }
 
