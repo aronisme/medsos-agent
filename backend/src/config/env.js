@@ -13,6 +13,7 @@ const env = {
   fbAppSecret: process.env.FB_APP_SECRET || '',
   baseUrl: process.env.BASE_URL || 'http://localhost:4000',
   dryRun: (process.env.DRY_RUN || 'true').toLowerCase() !== 'false',
+  mongodbUri: process.env.MONGODB_URI || process.env.MONGO_URL || '',
 };
 
 module.exports = env;
