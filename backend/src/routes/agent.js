@@ -97,7 +97,7 @@ router.post('/execute', async (req, res) => {
       case 'get_accounts': {
         const snapshot = await db.collection('social_accounts')
           .where('user_id', '==', uid)
-          .where('is_active', '==', 1)
+          .where('is_active', 'in', [1, true, '1'])
           .get();
         const accounts = snapshot.docs.map(doc => {
           const { access_token, ...rest } = doc.data();
@@ -188,7 +188,7 @@ router.post('/execute', async (req, res) => {
 
         const validAccountsSnap = await db.collection('social_accounts')
           .where('user_id', '==', uid)
-          .where('is_active', '==', 1)
+          .where('is_active', 'in', [1, true, '1'])
           .get();
           
         const accountMap = new Map();
@@ -292,7 +292,7 @@ router.post('/execute', async (req, res) => {
         if (Array.isArray(targets)) {
           const validAccountsSnap = await db.collection('social_accounts')
             .where('user_id', '==', uid)
-            .where('is_active', '==', 1)
+            .where('is_active', 'in', [1, true, '1'])
             .get();
           const accountMap = new Map();
           validAccountsSnap.forEach(doc => accountMap.set(doc.id, doc.data()));

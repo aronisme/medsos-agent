@@ -7,6 +7,8 @@ const { recordPostMemory, getRecentPlatformPosts, getCurrentQuarter } = require(
 const { diagnoseProductPerformance } = require('./diagnosticService');
 const { synthesizeKnowledge, getActiveKnowledgeInsights } = require('./knowledgeSynthesizer');
 const { logAgentDecision } = require('./decisionLogger');
+const { createExperiment, attachPostToExperiment } = require('./experimentService');
+const { syncAllPostsAnalytics } = require('../postAnalytics/syncService');
 const crypto = require('crypto');
 
 // 3 Sesi Terstruktur per Hari (Pagi, Siang, Malam) dengan 3 Slot Konten per Sesi (Total 9 Slot Prime-Time per Akun)
@@ -31,6 +33,77 @@ const DEFAULT_CONFIG = {
     { session: 'Malam', name: 'Malam 3', hour: 21, minute: 0 },
   ],
 };
+
+/**
+ * Membangun slot waktu dinamis dengan meningkatkan kepadatan konten pada sesi yang memiliki Jam Emas (Peak Golden Hour)
+ * @param {Array} activeInsights - Daftar wawasan aktif dari knowledgeSynthesizer
+ * @param {Array} baseSlots - Default slot konfigurasi
+ */
+function buildDynamicTimeSlots(activeInsights = [], baseSlots = DEFAULT_CONFIG.default_time_slots) {
+  const peakInsight = activeInsights.find(ins => ins.insight_type === 'peak_hour_preference' && ins.data_summary?.optimal_session);
+  if (!peakInsight || !peakInsight.data_summary) {
+    return baseSlots;
+  }
+
+  const { optimal_session, optimal_hour } = peakInsight.data_summary;
+  const peakH = Number(optimal_hour) || 19;
+
+  // Jika Sesi Malam adalah Sesi Emas (Beri 5 slot berkonsentrasi di jam emas)
+  if (optimal_session === 'Malam') {
+    return [
+      // Sesi 1: Pagi (2 Slot)
+      { session: 'Pagi', name: 'Pagi 1', hour: 7, minute: 15 },
+      { session: 'Pagi', name: 'Pagi 2', hour: 9, minute: 0 },
+      // Sesi 2: Siang (2 Slot)
+      { session: 'Siang', name: 'Siang 1', hour: 12, minute: 15 },
+      { session: 'Siang', name: 'Siang 2', hour: 13, minute: 45 },
+      // Sesi 3: Malam - PRIME TIME BOOST (5 Slot di sekitar Jam Emas)
+      { session: 'Malam', name: 'Malam 1 (Pre-Prime)', hour: Math.max(peakH - 1, 17), minute: 45 },
+      { session: 'Malam', name: 'Malam 2 (Golden Peak 1)', hour: peakH, minute: 15, is_golden_peak: true },
+      { session: 'Malam', name: 'Malam 3 (Golden Peak 2)', hour: peakH, minute: 50, is_golden_peak: true },
+      { session: 'Malam', name: 'Malam 4 (Post-Prime)', hour: Math.min(peakH + 1, 22), minute: 20 },
+      { session: 'Malam', name: 'Malam 5 (Late Relax)', hour: Math.min(peakH + 2, 23), minute: 0 },
+    ];
+  }
+
+  // Jika Sesi Siang adalah Sesi Emas
+  if (optimal_session === 'Siang') {
+    return [
+      // Sesi 1: Pagi (2 Slot)
+      { session: 'Pagi', name: 'Pagi 1', hour: 7, minute: 30 },
+      { session: 'Pagi', name: 'Pagi 2', hour: 9, minute: 15 },
+      // Sesi 2: Siang - PRIME TIME BOOST (5 Slot)
+      { session: 'Siang', name: 'Siang 1 (Pre-Break)', hour: Math.max(peakH - 1, 11), minute: 15 },
+      { session: 'Siang', name: 'Siang 2 (Golden Peak 1)', hour: peakH, minute: 5, is_golden_peak: true },
+      { session: 'Siang', name: 'Siang 3 (Golden Peak 2)', hour: peakH, minute: 40, is_golden_peak: true },
+      { session: 'Siang', name: 'Siang 4 (Afternoon)', hour: Math.min(peakH + 1, 15), minute: 15 },
+      { session: 'Siang', name: 'Siang 5 (Late Noon)', hour: Math.min(peakH + 2, 16), minute: 30 },
+      // Sesi 3: Malam (2 Slot)
+      { session: 'Malam', name: 'Malam 1', hour: 19, minute: 0 },
+      { session: 'Malam', name: 'Malam 2', hour: 20, minute: 30 },
+    ];
+  }
+
+  // Jika Sesi Pagi adalah Sesi Emas
+  if (optimal_session === 'Pagi') {
+    return [
+      // Sesi 1: Pagi - PRIME TIME BOOST (5 Slot)
+      { session: 'Pagi', name: 'Pagi 1 (Early Morning)', hour: Math.max(peakH - 1, 6), minute: 30 },
+      { session: 'Pagi', name: 'Pagi 2 (Golden Peak 1)', hour: peakH, minute: 15, is_golden_peak: true },
+      { session: 'Pagi', name: 'Pagi 3 (Golden Peak 2)', hour: peakH, minute: 50, is_golden_peak: true },
+      { session: 'Pagi', name: 'Pagi 4 (Mid Morning)', hour: Math.min(peakH + 1, 10), minute: 15 },
+      { session: 'Pagi', name: 'Pagi 5 (Late Morning)', hour: Math.min(peakH + 2, 11), minute: 0 },
+      // Sesi 2: Siang (2 Slot)
+      { session: 'Siang', name: 'Siang 1', hour: 12, minute: 30 },
+      { session: 'Siang', name: 'Siang 2', hour: 14, minute: 0 },
+      // Sesi 3: Malam (2 Slot)
+      { session: 'Malam', name: 'Malam 1', hour: 19, minute: 15 },
+      { session: 'Malam', name: 'Malam 2', hour: 20, minute: 45 },
+    ];
+  }
+
+  return baseSlots;
+}
 
 
 /**
@@ -185,11 +258,20 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     }
 
     const quarter = getCurrentQuarter();
-    logSteps.push(`Memulai Siklus Otonom ${quarter} (3 Sesi per Hari) untuk User ${userId}`);
+    logSteps.push(`Memulai Siklus Otonom ${quarter} untuk User ${userId}`);
+
+    // 0. PHASE 0: Pre-Cycle Analytics Sync (Meta API & Shortlinks Tracker)
+    try {
+      await syncAllPostsAnalytics(userId, { limit: 20 });
+      logSteps.push('Sinkronisasi Analitik: Berhasil menyinkronkan metrik Meta & klik link terbaru ke memori.');
+    } catch (syncErr) {
+      console.warn('[runAutonomousCycle Pre-Sync Warning]:', syncErr.message);
+    }
 
     // 1. PHASE 1: Synthesize Knowledge & Evaluasi Sesi Sebelumnya
     const newInsights = await synthesizeKnowledge(userId);
-    logSteps.push(`Evaluasi Sesi: Berhasil menganalisis performa sesi sebelumnya & menyintesis ${newInsights.length} wawasan.`);
+    const activeInsights = await getActiveKnowledgeInsights(userId);
+    logSteps.push(`Evaluasi Sesi: Berhasil menganalisis performa & menyintesis ${newInsights.length} wawasan aktif.`);
 
     await logAgentDecision({
       userId,
@@ -203,7 +285,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     // 2. PHASE 2: Ambil Akun Media Sosial yang Aktif (Stop IG, fokus Facebook & Threads)
     const accountsSnap = await db.collection('social_accounts')
       .where('user_id', '==', userId)
-      .where('is_active', '==', 1)
+      .where('is_active', 'in', [1, true, '1'])
       .get();
 
     // Filter platform: HANYA target Facebook dan Threads karena mendukung link klik langsung di caption
@@ -261,7 +343,6 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
 
     logSteps.push(`Inventori Valid: ${pools.new.length} Baru, ${pools.testing.length} Sedang Diuji, ${pools.promising.length} Menjanjikan, ${pools.proven.length} Pemenang, ${pools.stopped.length} Di-Stop.`);
 
-
     // 4. PHASE 4: Jalankan Diagnosis untuk Produk yang Mengalami Masalah
     for (const prod of pools.testing) {
       const summary = prod.quarterly_summary || {};
@@ -270,15 +351,21 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       }
     }
 
-    // 5. PHASE 5: Multi-Account Grid Scheduler (Minimal 3 konten per akun pada setiap fase: Pagi, Siang, Malam = 9 post/akun/hari)
+    // 5. PHASE 5: Dynamic Prime-Time Multi-Account Grid Scheduler
     const existingPostsSnap = await db.collection('posts')
       .where('user_id', '==', userId)
       .where('status', 'in', ['scheduled', 'draft'])
       .get();
 
     const existingPosts = existingPostsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const targetSlots = config.default_time_slots || DEFAULT_CONFIG.default_time_slots;
-    const postsPerPhase = config.posts_per_phase || 3;
+    
+    // Bangun target slots dengan alokasi kepadatan jam emas hasil pembelajaran analitik
+    const targetSlots = buildDynamicTimeSlots(activeInsights, config.default_time_slots || DEFAULT_CONFIG.default_time_slots);
+    const goldenInsight = activeInsights.find(ins => ins.insight_type === 'peak_hour_preference');
+    if (goldenInsight?.data_summary) {
+      logSteps.push(`Jam Emas Terdeteksi: Meningkatkan kepadatan slot pada Sesi ${goldenInsight.data_summary.optimal_session} (Jam ${goldenInsight.data_summary.optimal_hour}:00 WIB, CTR ${goldenInsight.data_summary.ctr_percent}%).`);
+    }
+
     const createdPosts = [];
     const nowUtc = Date.now();
 
@@ -299,10 +386,9 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       );
 
       // Hitung jitter menit antar akun (misal akun 1: +0m, akun 2: +7m, akun 3: +14m)
-      // agar tidak menembak Meta API di menit yang sama persis
       const accountJitterMin = (accIdx * 7) % 25;
 
-      // Iterasi ke 9 slot waktu (3 Pagi, 3 Siang, 3 Malam)
+      // Iterasi ke slot waktu dinamis
       for (let slotIdx = 0; slotIdx < targetSlots.length; slotIdx++) {
         const slot = targetSlots[slotIdx];
 
@@ -331,16 +417,24 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           continue; // Slot sudah terisi untuk akun ini
         }
 
-        // Dynamic Product Selection
+        // Dynamic Product Selection: Pada Jam Emas (is_golden_peak), prioritaskan produk PROVEN/Pemenang
         let selectedProduct = null;
-        if (pools.new.length > 0) {
+        let isTestingProduct = false;
+
+        if (slot.is_golden_peak && pools.proven.length > 0) {
+          selectedProduct = pools.proven[Math.floor(Math.random() * pools.proven.length)];
+        } else if (slot.is_golden_peak && pools.promising.length > 0) {
+          selectedProduct = pools.promising[Math.floor(Math.random() * pools.promising.length)];
+        } else if (pools.new.length > 0) {
           selectedProduct = pools.new.shift();
+          isTestingProduct = true;
         } else if (pools.proven.length > 0) {
           selectedProduct = pools.proven[Math.floor(Math.random() * pools.proven.length)];
         } else if (pools.promising.length > 0) {
           selectedProduct = pools.promising[Math.floor(Math.random() * pools.promising.length)];
         } else if (pools.testing.length > 0) {
           selectedProduct = pools.testing[Math.floor(Math.random() * pools.testing.length)];
+          isTestingProduct = true;
         } else if (validProducts.length > 0) {
           selectedProduct = validProducts[Math.floor(Math.random() * validProducts.length)];
         }
@@ -364,12 +458,54 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
         // 6.3. Generate Shortlink Unik Khusus Akun Ini
         const shortlinkUrl = await createPostShortlink(selectedProduct, platform, userId);
 
-        // 6.4. Generate Copywriting Segar Khusus Sesi (Pagi/Siang/Malam)
+        // Inisiasi Otomatis Eksperimen A/B untuk produk Testing
+        let linkedExperimentId = null;
+        let variantId = 'A';
+        let customAngle = profile.recommended_angles?.[(accIdx + slotIdx) % (profile.recommended_angles?.length || 1)] || 'Problem-Agitate-Solution';
+
+        if (isTestingProduct && selectedProduct.id) {
+          try {
+            const expSnap = await db.collection('experiments')
+              .where('user_id', '==', userId)
+              .where('product_id', '==', String(selectedProduct.id))
+              .where('status', '==', 'running')
+              .limit(1)
+              .get();
+
+            if (expSnap.empty) {
+              const newExp = await createExperiment({
+                productId: selectedProduct.id,
+                quarter,
+                hypothesis: `Menguji apakah sudut pandang PAS menghasilkan CTR lebih tinggi dibanding Honest Review untuk ${selectedProduct.title.slice(0, 30)}`,
+                objective: 'clicks',
+                variants: [
+                  { variant_id: 'A', template_id: 'tpl_pas_modern_01', copy_angle: 'Problem-Agitate-Solution' },
+                  { variant_id: 'B', template_id: 'tpl_review_spill_02', copy_angle: 'Honest Review' }
+                ],
+                userId
+              });
+              linkedExperimentId = newExp.id;
+              variantId = 'A';
+              customAngle = 'Problem-Agitate-Solution';
+            } else {
+              const expDoc = expSnap.docs[0];
+              linkedExperimentId = expDoc.id;
+              const expData = expDoc.data();
+              const varAHasPost = expData.variants?.find(v => v.variant_id === 'A')?.post_id;
+              variantId = varAHasPost ? 'B' : 'A';
+              customAngle = variantId === 'B' ? 'Honest Review' : 'Problem-Agitate-Solution';
+            }
+          } catch (expErr) {
+            console.warn('[runAutonomousCycle Experiment Warning]:', expErr.message);
+          }
+        }
+
+        // 6.4. Generate Copywriting Segar Khusus Sesi
         const postDraft = await generatePostContent({
           product: selectedProduct,
           profile,
           platform,
-          angle: profile.recommended_angles?.[(accIdx + slotIdx) % (profile.recommended_angles?.length || 1)] || 'Problem-Agitate-Solution',
+          angle: customAngle,
           objective: 'clicks',
           shortlinkUrl,
           sessionInfo: {
@@ -418,10 +554,17 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
 
         await postDocRef.set(newPost);
 
+        // Jika terhubung eksperimen A/B, attach post ke varian
+        if (linkedExperimentId) {
+          await attachPostToExperiment(linkedExperimentId, variantId, postDocRef.id);
+        }
+
         // 6.7. Rekam ke Product Post Memory
         await recordPostMemory({
           product_id: selectedProduct.id,
           post_id: postDocRef.id,
+          experiment_id: linkedExperimentId,
+          variant_id: variantId,
           quarter,
           objective: 'clicks',
           user_id: userId,
@@ -454,10 +597,12 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           productTitle: selectedProduct.title,
           scheduledAt: targetDate.toISOString(),
           platform,
-          session: slot.session || 'Sesi'
+          session: slot.session || 'Sesi',
+          isGoldenPeak: Boolean(slot.is_golden_peak)
         });
 
-        logSteps.push(`✅ [${slot.session}] @${targetAccount.page_name} (${platform}) - "${selectedProduct.title.slice(0, 25)}..." pada ${targetDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`);
+        const goldenTag = slot.is_golden_peak ? '🌟 [JAM EMAS]' : '';
+        logSteps.push(`✅ [${slot.session}] ${goldenTag} @${targetAccount.page_name} (${platform}) - "${selectedProduct.title.slice(0, 25)}..." pada ${targetDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`);
       }
     }
 

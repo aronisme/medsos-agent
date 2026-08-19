@@ -54,6 +54,7 @@ async function matchAffiliateLinks(caption, userId = null) {
       matchedLinks.push({
         code,
         url: rawUrl,
+        product_id: data.product_id || '',
         title: data.title || 'Shopee Product',
         image_url: data.image_url || '',
         price: data.price || 0,

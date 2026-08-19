@@ -144,7 +144,7 @@ async function autoRefreshAllTokens() {
   const results = [];
   try {
     const snap = await db.collection('social_accounts')
-      .where('is_active', '==', 1)
+      .where('is_active', 'in', [1, true, '1'])
       .get();
 
     for (const doc of snap.docs) {

@@ -37,7 +37,7 @@ async function synthesizeKnowledge(userId) {
       mediaSegments[key].count++;
     });
 
-    // 2. Sintesis Preferensi Jam Posting Terbaik (Learned Peak Hours)
+    // 2. Sintesis Preferensi Jam & Sesi Posting Terbaik (Learned Peak Golden Hours & Sessions)
     const hourStats = {};
     posts.forEach(p => {
       const hour = p.context_at_post?.posting_hour;
@@ -51,13 +51,21 @@ async function synthesizeKnowledge(userId) {
       }
     });
 
-    // Evaluasi jam terbaik per platform
+    // Helper: Klasifikasi jam ke Sesi
+    const getSessionFromHour = (h) => {
+      if (h >= 5 && h <= 10) return 'Pagi';
+      if (h >= 11 && h <= 16) return 'Siang';
+      return 'Malam';
+    };
+
+    // Evaluasi jam & sesi terbaik per platform
     const platformBestHours = {};
     Object.values(hourStats).forEach(h => {
-      if (h.posts >= 2 && h.views > 0) {
-        const ctr = h.clicks / h.views;
+      if (h.posts >= 1 && (h.views > 0 || h.clicks > 0)) {
+        const ctr = h.views > 0 ? h.clicks / h.views : 0.02;
         if (!platformBestHours[h.platform] || ctr > platformBestHours[h.platform].ctr) {
-          platformBestHours[h.platform] = { hour: h.hour, ctr, posts: h.posts };
+          const session = getSessionFromHour(h.hour);
+          platformBestHours[h.platform] = { hour: h.hour, session, ctr, posts: h.posts, clicks: h.clicks, views: h.views };
         }
       }
     });
@@ -69,10 +77,18 @@ async function synthesizeKnowledge(userId) {
         user_id: userId,
         platform,
         insight_type: 'peak_hour_preference',
-        finding: `Jam posting paling efektif di ${platform} terdeteksi pada pukul ${String(bestH.hour).padStart(2, '0')}:00 (CTR ${(bestH.ctr * 100).toFixed(2)}%)`,
+        finding: `Jam Emas posting di ${platform} terdeteksi pada pukul ${String(bestH.hour).padStart(2, '0')}:00 (Sesi ${bestH.session}, CTR ${(bestH.ctr * 100).toFixed(2)}%)`,
         recommended_action: `SCHEDULE_PRIORITY_AT_${bestH.hour}`,
-        data_summary: { optimal_hour: bestH.hour, sample_posts: bestH.posts },
-        confidence: bestH.posts >= 5 ? 'high' : 'medium',
+        data_summary: {
+          optimal_hour: bestH.hour,
+          optimal_session: bestH.session,
+          boost_session: bestH.session,
+          sample_posts: bestH.posts,
+          total_views: bestH.views,
+          total_clicks: bestH.clicks,
+          ctr_percent: Number((bestH.ctr * 100).toFixed(2))
+        },
+        confidence: bestH.posts >= 4 ? 'high' : 'medium',
         updated_at: new Date().toISOString()
       };
       await db.collection('knowledge_insights').doc(insightId).set(payload, { merge: true });

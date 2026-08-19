@@ -87,16 +87,80 @@ async function recordPostMemory(memoryData) {
  * Sinkronisasi metrik terbaru dari post_analytics dan link_clicks ke dalam memory
  * @param {string} postId - ID Postingan
  * @param {Object} updatedRawMetrics - Metrik baru yang didapat dari Meta / Link Tracker
+ * @param {Object} [fallbackContext] - Informasi tambahan jika memory belum dibuat sebelumnya
  */
-async function syncPostMemoryMetrics(postId, updatedRawMetrics = {}) {
+async function syncPostMemoryMetrics(postId, updatedRawMetrics = {}, fallbackContext = null) {
   try {
     const memoryId = `mem_${postId}`;
-    const docRef = db.collection('product_post_memory').doc(memoryId);
-    const doc = await docRef.get();
+    let docRef = db.collection('product_post_memory').doc(memoryId);
+    let doc = await docRef.get();
 
-    if (!doc.exists) return null;
+    let data = null;
 
-    const data = doc.data();
+    if (!doc.exists) {
+      // Coba cari berdasarkan post_id
+      const querySnap = await db.collection('product_post_memory')
+        .where('post_id', '==', postId)
+        .limit(1)
+        .get();
+
+      if (!querySnap.empty) {
+        doc = querySnap.docs[0];
+        docRef = doc.ref;
+        data = doc.data();
+      } else if (fallbackContext && fallbackContext.product_id) {
+        // Buat entri memori baru otomatis jika belum ada (misal post dari Composer / Meta langsung)
+        const quarter = fallbackContext.quarter || getCurrentQuarter();
+        const obj = fallbackContext.objective || 'clicks';
+        const norm = normalizeMetrics(updatedRawMetrics);
+        const sc = calculateDecomposedScores(norm, obj);
+        
+        const newPayload = {
+          id: memoryId,
+          post_id: postId,
+          product_id: String(fallbackContext.product_id),
+          user_id: String(fallbackContext.user_id || 'system'),
+          experiment_id: fallbackContext.experiment_id || null,
+          variant_id: fallbackContext.variant_id || 'A',
+          quarter: String(quarter),
+          objective: obj,
+          context_at_post: {
+            platform: fallbackContext.platform || 'facebook',
+            account_id: fallbackContext.account_id || '',
+            account_name: fallbackContext.account_name || '',
+            shortlink_code: fallbackContext.shortlink_code || '',
+            target_audience: fallbackContext.target_audience || 'Umum',
+            price_at_post: Number(fallbackContext.price_at_post) || 0,
+            original_price_at_post: Number(fallbackContext.original_price_at_post) || null,
+            discount_at_post: fallbackContext.discount_at_post || '',
+            posting_hour: Number(fallbackContext.posting_hour ?? new Date().getHours()),
+            posting_day: fallbackContext.posting_day || getDayName(new Date()),
+            hook_type: fallbackContext.hook_type || 'general',
+            copy_angle: fallbackContext.copy_angle || 'Standard',
+            template_id: fallbackContext.template_id || '',
+            template_name: fallbackContext.template_name || '',
+            media_type: fallbackContext.media_type || 'image',
+            media_urls: Array.isArray(fallbackContext.media_urls) ? fallbackContext.media_urls : [],
+            content_fingerprint: fallbackContext.content_fingerprint || '',
+          },
+          published_at: fallbackContext.published_at || new Date().toISOString(),
+          last_synced_at: new Date().toISOString(),
+          raw_metrics: updatedRawMetrics,
+          normalized_metrics: norm,
+          scores: sc,
+          created_at: new Date().toISOString(),
+        };
+
+        await docRef.set(newPayload);
+        await updateProductQuarterlySnapshot(fallbackContext.product_id, quarter, fallbackContext.user_id || 'system');
+        return newPayload;
+      } else {
+        return null;
+      }
+    } else {
+      data = doc.data();
+    }
+
     const mergedRaw = {
       ...data.raw_metrics,
       ...updatedRawMetrics,
@@ -119,7 +183,7 @@ async function syncPostMemoryMetrics(postId, updatedRawMetrics = {}) {
       await updateProductQuarterlySnapshot(data.product_id, data.quarter, data.user_id);
     }
 
-    return { id: memoryId, ...data, ...updatePayload };
+    return { id: docRef.id, ...data, ...updatePayload };
   } catch (err) {
     console.error('[syncPostMemoryMetrics Error]:', err.message);
     return null;

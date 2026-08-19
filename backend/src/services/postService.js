@@ -66,7 +66,7 @@ async function publishPostNow(postId) {
   if (targets.length === 0) {
     const accountsSnap = await db.collection('social_accounts')
       .where('user_id', '==', post.user_id)
-      .where('is_active', '==', 1)
+      .where('is_active', 'in', [1, true, '1'])
       .get();
       
     targets = accountsSnap.docs.map(accDoc => {
@@ -127,6 +127,23 @@ async function publishPostNow(postId) {
       updateData.posted_at = new Date().toISOString();
     }
     await docRef.update(updateData);
+
+    // Closed-Loop: Update post status & platform post ID di product_post_memory
+    try {
+      const memRef = db.collection('product_post_memory').doc(`mem_${postId}`);
+      const memDoc = await memRef.get();
+      if (memDoc.exists) {
+        const successTarget = targets.find(t => t.status === 'success' && t.post_id_on_platform);
+        await memRef.update({
+          post_id_on_platform: successTarget ? successTarget.post_id_on_platform : null,
+          published_at: new Date().toISOString(),
+          status: newStatus === 'posted' ? 'published' : newStatus,
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (memErr) {
+      console.warn('[publishPostNow] Memory sync warning:', memErr.message);
+    }
   }
 
   return results;

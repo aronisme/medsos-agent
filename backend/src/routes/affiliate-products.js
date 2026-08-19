@@ -207,6 +207,23 @@ router.post('/', async (req, res) => {
       videos: Array.isArray(videos) ? videos : [],
       media: unifiedMedia,
       variants: Array.isArray(variants) ? variants : [],
+      lifecycle_status: 'NEW',
+      quarterly_status: {
+        status: 'active',
+        tested_quarters: []
+      },
+      quarterly_summary: {
+        current_quarter: `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`,
+        total_attempts: 0,
+        total_views: 0,
+        total_clicks: 0,
+        avg_ctr_percent: 0,
+        avg_score: 0,
+        best_score: 0,
+        best_template_id: null,
+        last_tested_at: null,
+        updated_at: new Date().toISOString()
+      },
       notes: String(notes || ''),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -386,6 +403,24 @@ router.post('/bulk', async (req, res) => {
       };
 
       if (!existingDocId) {
+        const currentQ = `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`;
+        productData.lifecycle_status = 'NEW';
+        productData.quarterly_status = {
+          status: 'active',
+          tested_quarters: []
+        };
+        productData.quarterly_summary = {
+          current_quarter: currentQ,
+          total_attempts: 0,
+          total_views: 0,
+          total_clicks: 0,
+          avg_ctr_percent: 0,
+          avg_score: 0,
+          best_score: 0,
+          best_template_id: null,
+          last_tested_at: null,
+          updated_at: now
+        };
         productData.created_at = now;
       }
 

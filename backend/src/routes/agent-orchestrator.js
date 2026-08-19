@@ -76,16 +76,34 @@ router.get('/quarter/status', async (req, res) => {
       }
     });
 
-    const avgQuarterCtr = totalQuarterViews > 0
-      ? Number(((totalQuarterClicks / totalQuarterViews) * 100).toFixed(2))
-      : 0;
+    // Ambil akumulasi views & clicks dari post_analytics agar data selalu sinkron dengan Meta API & Link Tracker
+    const postAnalyticsSnap = await db.collection('post_analytics')
+      .where('user_id', 'in', [userId, 'system'])
+      .get();
+
+    let totalGlobalViews = 0;
+    let totalGlobalClicks = 0;
+
+    postAnalyticsSnap.docs.forEach(doc => {
+      const d = doc.data();
+      const views = Number(d.metrics?.views) || Number(d.metrics?.reach) || 0;
+      const clicks = Number(d.affiliate?.human_clicks) || Number(d.affiliate?.total_clicks) || 0;
+      totalGlobalViews += views;
+      totalGlobalClicks += clicks;
+    });
+
+    const finalViews = Math.max(totalQuarterViews, totalGlobalViews);
+    const finalClicks = Math.max(totalQuarterClicks, totalGlobalClicks);
+    const avgQuarterCtr = finalViews > 0
+      ? Number(((finalClicks / finalViews) * 100).toFixed(2))
+      : (finalClicks > 0 ? 100 : 0);
 
     res.json({
       success: true,
       current_quarter: currentQuarter,
       total_products: products.length,
-      total_views: totalQuarterViews,
-      total_clicks: totalQuarterClicks,
+      total_views: finalViews,
+      total_clicks: finalClicks,
       avg_ctr: avgQuarterCtr,
       breakdown: {
         new_count: lifecycleBreakdown.NEW.length,

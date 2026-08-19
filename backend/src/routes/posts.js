@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
     // Resolve valid accounts for targets
     const validAccountsSnap = await db.collection('social_accounts')
       .where('user_id', '==', req.user.id)
-      .where('is_active', '==', 1)
+      .where('is_active', 'in', [1, true, '1'])
       .get();
       
     const accountMap = new Map();
@@ -162,7 +162,7 @@ router.put('/:id', async (req, res) => {
     if (Array.isArray(targets)) {
       const validAccountsSnap = await db.collection('social_accounts')
         .where('user_id', '==', req.user.id)
-        .where('is_active', '==', 1)
+        .where('is_active', 'in', [1, true, '1'])
         .get();
       const accountMap = new Map();
       validAccountsSnap.forEach(doc => accountMap.set(doc.id, doc.data()));

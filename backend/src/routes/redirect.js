@@ -209,6 +209,37 @@ router.get('/:code', async (req, res) => {
           clickDocRef.set(clickLog)
         ]);
 
+        // Real-time Closed-Loop Attribution to Agent Memory & Product Lifecycle
+        if (!isBot && code) {
+          try {
+            const memSnap = await db.collection('product_post_memory')
+              .where('context_at_post.shortlink_code', '==', code)
+              .get();
+
+            if (!memSnap.empty) {
+              const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+              for (const memDoc of memSnap.docs) {
+                const memData = memDoc.data();
+                await memDoc.ref.update({
+                  'raw_metrics.affiliate_clicks': FieldValue.increment(1),
+                  last_synced_at: nowIso
+                });
+
+                if (memData.product_id) {
+                  const { updateProductQuarterlySnapshot } = require('../services/agent/productPostMemoryService');
+                  await updateProductQuarterlySnapshot(memData.product_id, currentQuarter, memData.user_id || data.user_id || 'system');
+                }
+              }
+            } else if (data.product_id) {
+              const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+              const { updateProductQuarterlySnapshot } = require('../services/agent/productPostMemoryService');
+              await updateProductQuarterlySnapshot(data.product_id, currentQuarter, data.user_id || 'system');
+            }
+          } catch (memErr) {
+            console.warn('[Realtime Memory Click Sync Warning]:', memErr.message);
+          }
+        }
+
       } catch (logErr) {
         console.error('[Async Analytics Error]:', logErr.message);
       }

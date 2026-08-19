@@ -2,10 +2,13 @@ const { db } = require('../config/firebase');
 const { publishPostNow } = require('../services/postService');
 const { runAutonomousCycle, getAgentConfig } = require('../services/agent/orchestratorService');
 const { autoRefreshAllTokens } = require('../services/tokenRefreshService');
+const { syncAllPostsAnalytics } = require('../services/postAnalytics/syncService');
+const { evaluateExperiment } = require('../services/agent/experimentService');
 
-// In-memory timestamp untuk rate-limiting AI cycle runner
+// In-memory timestamp untuk rate-limiting background workers
 let lastAutonomousCycleRun = 0;
 let lastTokenRefreshRun = 0;
+let lastAnalyticsSyncRun = 0;
 
 /**
  * Memproses postingan terjadwal yang sudah waktunya.
@@ -46,7 +49,43 @@ async function processScheduledPosts() {
       }
     }
 
-    // 2. SLOW-PATH dengan Smart Throttling (Cek setiap 15 menit):
+    // 2. ANALYTICS AUTO-SYNC (Cek setiap 30 menit):
+    // Menarik data metrik Meta & klik link terbaru secara background tanpa harus klik manual
+    const thirtyMinutes = 30 * 60 * 1000;
+    if (now - lastAnalyticsSyncRun >= thirtyMinutes) {
+      lastAnalyticsSyncRun = now;
+      setImmediate(async () => {
+        try {
+          const accountsSnap = await db.collection('social_accounts')
+            .where('is_active', 'in', [1, true, '1'])
+            .get();
+
+          const activeUserIds = new Set();
+          accountsSnap.forEach(d => {
+            const u = d.data().user_id;
+            if (u) activeUserIds.add(u);
+          });
+
+          for (const uid of activeUserIds) {
+            console.log(`[scheduler] Menjalankan Auto-Sync Analitik Meta & Link untuk User: ${uid}`);
+            await syncAllPostsAnalytics(uid, { limit: 30 });
+          }
+
+          // Evaluasi eksperimen A/B yang sedang berjalan
+          const expSnap = await db.collection('experiments')
+            .where('status', '==', 'running')
+            .get();
+
+          for (const expDoc of expSnap.docs) {
+            await evaluateExperiment(expDoc.id);
+          }
+        } catch (syncErr) {
+          console.error('[scheduler] Error running background analytics sync:', syncErr.message);
+        }
+      });
+    }
+
+    // 3. SLOW-PATH dengan Smart Throttling (Cek setiap 15 menit):
     // Jika antrean postingan kosong atau kurang dari kuota, jalankan Autonomous Cycle
     const fifteenMinutes = 15 * 60 * 1000;
     if (now - lastAutonomousCycleRun >= fifteenMinutes) {
@@ -56,7 +95,7 @@ async function processScheduledPosts() {
         try {
           // Ambil user yang memiliki akun aktif
           const accountsSnap = await db.collection('social_accounts')
-            .where('is_active', '==', 1)
+            .where('is_active', 'in', [1, true, '1'])
             .get();
 
           const activeUserIds = new Set();
@@ -78,7 +117,7 @@ async function processScheduledPosts() {
       });
     }
 
-    // 3. TOKEN HEALTH & AUTO-REFRESH (Cek setiap 12 jam untuk FB, IG, dan Threads):
+    // 4. TOKEN HEALTH & AUTO-REFRESH (Cek setiap 12 jam untuk FB, IG, dan Threads):
     const twelveHours = 12 * 60 * 60 * 1000;
     if (now - lastTokenRefreshRun >= twelveHours) {
       lastTokenRefreshRun = now;

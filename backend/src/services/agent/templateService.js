@@ -196,9 +196,60 @@ function fillTemplatePlaceholders(structure, data = {}) {
   return filled.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * Memperbarui performa template untuk Multi-Armed Bandit berdasarkan metrik tayangan dan klik riil
+ * @param {string} templateId 
+ * @param {string} platform 
+ * @param {string} objective 
+ * @param {number} views 
+ * @param {number} clicks 
+ */
+async function recordTemplatePerformance(templateId, platform = 'facebook', objective = 'clicks', views = 0, clicks = 0) {
+  try {
+    if (!templateId) return null;
+    const docRef = db.collection('post_templates').doc(templateId);
+    const doc = await docRef.get();
+    if (!doc.exists) return null;
+
+    const data = doc.data();
+    const segmentKey = `${platform}__${objective}`;
+    const seg = data.segment_performance?.[segmentKey] || { total_views: 0, total_clicks: 0, sample_size: 0, avg_ctr: 0.02 };
+
+    const newViews = (seg.total_views || 0) + views;
+    const newClicks = (seg.total_clicks || 0) + clicks;
+    const newSampleSize = (seg.sample_size || 0) + 1;
+    const newCtr = newViews > 0 ? Number((newClicks / newViews).toFixed(4)) : (seg.avg_ctr || 0.02);
+
+    const updatedSegmentPerformance = {
+      ...(data.segment_performance || {}),
+      [segmentKey]: {
+        total_views: newViews,
+        total_clicks: newClicks,
+        sample_size: newSampleSize,
+        avg_ctr: newCtr,
+        last_updated_at: new Date().toISOString()
+      }
+    };
+
+    const globalSampleSize = (data.global_sample_size || 0) + 1;
+
+    await docRef.update({
+      segment_performance: updatedSegmentPerformance,
+      global_sample_size: globalSampleSize,
+      updated_at: new Date().toISOString()
+    });
+
+    return { success: true, templateId, segmentKey, newCtr };
+  } catch (err) {
+    console.error('[recordTemplatePerformance Error]:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   SEED_TEMPLATES,
   ensureSeedTemplates,
   selectTemplateByBandit,
   fillTemplatePlaceholders,
+  recordTemplatePerformance,
 };

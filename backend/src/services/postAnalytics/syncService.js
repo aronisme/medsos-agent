@@ -5,6 +5,8 @@ const { fetchThreadsPosts } = require('./threadsAnalytics');
 const { matchAffiliateLinks } = require('./linkMatcher');
 const { normalizePost } = require('./normalizer');
 const { captureSnapshot } = require('./snapshotService');
+const { syncPostMemoryMetrics } = require('../agent/productPostMemoryService');
+const { recordTemplatePerformance } = require('../agent/templateService');
 
 /**
  * Sinkronisasi penuh analitik multi-platform dari Meta API ke Firestore
@@ -19,7 +21,7 @@ async function syncAllPostsAnalytics(userId, options = {}) {
   // 1. Fetch user's active social accounts
   const accountsSnap = await db.collection('social_accounts')
     .where('user_id', '==', userId)
-    .where('is_active', '==', 1)
+    .where('is_active', 'in', [1, true, '1'])
     .get();
 
   if (accountsSnap.empty) {
@@ -94,6 +96,26 @@ async function syncAllPostsAnalytics(userId, options = {}) {
     }
   });
 
+  // Pre-fetch user posts to link Meta posts back to posts collection
+  const existingPostsSnap = await db.collection('posts')
+    .where('user_id', 'in', [userId, 'system'])
+    .limit(100)
+    .get();
+
+  const userPosts = existingPostsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Map platform post IDs and shortlinks to post objects
+  const platformPostMap = new Map();
+  userPosts.forEach(p => {
+    if (Array.isArray(p.targets)) {
+      p.targets.forEach(t => {
+        if (t.post_id_on_platform) {
+          platformPostMap.set(String(t.post_id_on_platform), p);
+        }
+      });
+    }
+  });
+
   // 3. Normalize, match affiliate links, save to Firestore, and create snapshot
   let totalSaved = 0;
 
@@ -130,6 +152,45 @@ async function syncAllPostsAnalytics(userId, options = {}) {
       // Save historical snapshot
       await captureSnapshot(normalized, userId);
 
+      // 4. Closed-Loop Sync to Agent Memory & Product Lifecycle
+      const matchedPost = platformPostMap.get(String(item.raw_post_id)) || null;
+      const matchedProductId = affiliateData.short_links?.[0]?.product_id || matchedPost?.product_id || null;
+      const shortlinkCode = affiliateData.short_links?.[0]?.code || '';
+      const totalClicks = normalized.affiliate?.human_clicks || normalized.affiliate?.total_clicks || 0;
+      const rawViews = Number(normalized.metrics?.views) || Number(normalized.metrics?.reach) || 0;
+
+      const rawMetrics = {
+        views: rawViews,
+        reach: Number(normalized.metrics?.reach) || rawViews,
+        likes: Number(normalized.metrics?.likes) || 0,
+        comments: (Number(normalized.metrics?.comments) || 0) + (Number(normalized.metrics?.replies) || 0),
+        shares: (Number(normalized.metrics?.shares) || 0) + (Number(normalized.metrics?.reposts) || 0) + (Number(normalized.metrics?.quotes) || 0),
+        saves: Number(normalized.metrics?.saves) || 0,
+        affiliate_clicks: totalClicks,
+      };
+
+      const targetPostId = matchedPost ? matchedPost.id : docId;
+
+      const fallbackContext = {
+        product_id: matchedProductId,
+        user_id: userId,
+        platform: item.platform,
+        account_id: account.id || account.page_id,
+        account_name: account.page_name || account.name,
+        shortlink_code: shortlinkCode,
+        published_at: item.published_at || nowIso,
+        posting_hour: new Date(item.published_at || nowIso).getHours(),
+      };
+
+      await syncPostMemoryMetrics(targetPostId, rawMetrics, fallbackContext);
+
+      // 5. Update Multi-Armed Bandit Template Performance
+      const matchedMemDoc = await db.collection('product_post_memory').doc(`mem_${targetPostId}`).get();
+      const templateId = matchedMemDoc.exists ? matchedMemDoc.data()?.context_at_post?.template_id : null;
+      if (templateId) {
+        await recordTemplatePerformance(templateId, item.platform, 'clicks', rawViews, totalClicks);
+      }
+
       totalSaved++;
     } catch (err) {
       console.error(`Error saving post analytics ${item.raw_post_id}:`, err.message);
@@ -159,7 +220,7 @@ async function syncAllPostsAnalytics(userId, options = {}) {
 async function getPlatformConnectionStatus(userId) {
   const accountsSnap = await db.collection('social_accounts')
     .where('user_id', '==', userId)
-    .where('is_active', '==', 1)
+    .where('is_active', 'in', [1, true, '1'])
     .get();
 
   const accounts = accountsSnap.docs.map(d => d.data());
