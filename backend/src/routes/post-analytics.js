@@ -25,9 +25,13 @@ router.get('/', async (req, res) => {
     const snap = await query.get();
     let posts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Account ID Filter (in-memory)
-    if (account_id) {
-      posts = posts.filter(p => p.identity?.account_id === account_id);
+    // Account Filter (in-memory)
+    if (account_id && account_id !== 'all') {
+      posts = posts.filter(p => 
+        p.identity?.account_id === account_id ||
+        p.identity?.account_name === account_id ||
+        p.identity?.username === account_id
+      );
     }
 
     // Search query

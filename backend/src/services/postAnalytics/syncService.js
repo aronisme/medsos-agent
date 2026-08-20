@@ -35,38 +35,30 @@ async function syncAllPostsAnalytics(userId, options = {}) {
 
   const accounts = accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-  const fbAccount = accounts.find(a => a.platform === 'facebook');
-  const igAccount = accounts.find(a => a.platform === 'instagram');
-  const threadsAccount = accounts.find(a => a.platform === 'threads');
-
   const syncTasks = [];
   const taskMeta = [];
 
-  // Task 1: Facebook
-  if (fbAccount?.access_token && fbAccount?.page_id) {
-    taskMeta.push({ platform: 'facebook', account: fbAccount });
-    syncTasks.push(fetchFacebookPosts(fbAccount.page_id, fbAccount.access_token, limitPerPlatform));
-  }
-
-  // Task 2: Instagram
-  if (igAccount?.access_token && igAccount?.page_id) {
-    taskMeta.push({ platform: 'instagram', account: igAccount });
-    syncTasks.push(fetchInstagramPosts(igAccount.page_id, igAccount.access_token, limitPerPlatform));
-  }
-
-  // Task 3: Threads
-  if (threadsAccount?.access_token) {
-    taskMeta.push({ platform: 'threads', account: threadsAccount });
-    syncTasks.push(fetchThreadsPosts(threadsAccount.page_id, threadsAccount.access_token, limitPerPlatform));
+  // Iterate over ALL active accounts to sync all pages/profiles per platform
+  for (const acc of accounts) {
+    if (acc.platform === 'facebook' && acc.access_token && acc.page_id) {
+      taskMeta.push({ platform: 'facebook', account: acc });
+      syncTasks.push(fetchFacebookPosts(acc.page_id, acc.access_token, limitPerPlatform));
+    } else if (acc.platform === 'instagram' && acc.access_token && acc.page_id) {
+      taskMeta.push({ platform: 'instagram', account: acc });
+      syncTasks.push(fetchInstagramPosts(acc.page_id, acc.access_token, limitPerPlatform));
+    } else if (acc.platform === 'threads' && acc.access_token) {
+      taskMeta.push({ platform: 'threads', account: acc });
+      syncTasks.push(fetchThreadsPosts(acc.page_id, acc.access_token, limitPerPlatform));
+    }
   }
 
   // 2. Execute all platform fetches concurrently with Promise.allSettled
   const settledResults = await Promise.allSettled(syncTasks);
 
   const syncSummary = {
-    facebook: { status: 'skipped', count: 0, error: null },
-    instagram: { status: 'skipped', count: 0, error: null },
-    threads: { status: 'skipped', count: 0, error: null },
+    facebook: { status: 'skipped', count: 0, error: null, accounts: [] },
+    instagram: { status: 'skipped', count: 0, error: null, accounts: [] },
+    threads: { status: 'skipped', count: 0, error: null, accounts: [] },
   };
 
   let allRawItems = [];
@@ -74,25 +66,24 @@ async function syncAllPostsAnalytics(userId, options = {}) {
   settledResults.forEach((res, index) => {
     const meta = taskMeta[index];
     const platform = meta.platform;
+    const accountName = meta.account.page_name || meta.account.username || meta.account.id;
 
     if (res.status === 'fulfilled') {
       const items = res.value || [];
-      syncSummary[platform] = {
-        status: 'success',
-        count: items.length,
-        error: null,
-      };
+      syncSummary[platform].status = 'success';
+      syncSummary[platform].count += items.length;
+      syncSummary[platform].accounts.push({ name: accountName, count: items.length, status: 'success' });
       // Attach account reference to raw items
       items.forEach(item => {
         allRawItems.push({ item, account: meta.account });
       });
     } else {
       const errMsg = res.reason?.response?.data?.error?.message || res.reason?.message || 'Gagal sinkronisasi';
-      syncSummary[platform] = {
-        status: 'failed',
-        count: 0,
-        error: errMsg,
-      };
+      syncSummary[platform].accounts.push({ name: accountName, count: 0, status: 'failed', error: errMsg });
+      if (syncSummary[platform].status !== 'success') {
+        syncSummary[platform].status = 'failed';
+        syncSummary[platform].error = errMsg;
+      }
     }
   });
 
@@ -223,20 +214,33 @@ async function getPlatformConnectionStatus(userId) {
     .where('is_active', 'in', [1, true, '1'])
     .get();
 
-  const accounts = accountsSnap.docs.map(d => d.data());
+  const accounts = accountsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const getPlatformAccounts = (platform) => 
+    accounts.filter(a => a.platform === platform && Boolean(a.access_token));
+
+  const fbAccs = getPlatformAccounts('facebook');
+  const igAccs = getPlatformAccounts('instagram');
+  const thAccs = getPlatformAccounts('threads');
 
   return {
     facebook: {
-      connected: accounts.some(a => a.platform === 'facebook' && Boolean(a.access_token)),
-      account_name: accounts.find(a => a.platform === 'facebook')?.page_name || null,
+      connected: fbAccs.length > 0,
+      count: fbAccs.length,
+      account_name: fbAccs.map(a => a.page_name || a.username || a.name || 'Facebook Page').join(', ') || null,
+      accounts: fbAccs.map(a => ({ id: a.id, name: a.page_name || a.username || a.name, page_id: a.page_id })),
     },
     instagram: {
-      connected: accounts.some(a => a.platform === 'instagram' && Boolean(a.access_token)),
-      account_name: accounts.find(a => a.platform === 'instagram')?.page_name || null,
+      connected: igAccs.length > 0,
+      count: igAccs.length,
+      account_name: igAccs.map(a => a.page_name || a.username || a.name || 'Instagram Account').join(', ') || null,
+      accounts: igAccs.map(a => ({ id: a.id, name: a.page_name || a.username || a.name, page_id: a.page_id })),
     },
     threads: {
-      connected: accounts.some(a => a.platform === 'threads' && Boolean(a.access_token)),
-      account_name: accounts.find(a => a.platform === 'threads')?.page_name || null,
+      connected: thAccs.length > 0,
+      count: thAccs.length,
+      account_name: thAccs.map(a => a.page_name || a.username || a.name || 'Threads Profile').join(', ') || null,
+      accounts: thAccs.map(a => ({ id: a.id, name: a.page_name || a.username || a.name, page_id: a.page_id })),
     },
   };
 }

@@ -40,6 +40,7 @@ export default function PostAnalytics() {
 
   // Filters
   const [activePlatform, setActivePlatform] = useState('all');
+  const [activeAccount, setActiveAccount] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
@@ -54,13 +55,40 @@ export default function PostAnalytics() {
   // Export dropdown state
   const [showExportMenu, setShowExportMenu] = useState(false);
 
+  // Compute available accounts for filter dropdown
+  const availableAccounts = useMemo(() => {
+    const list = [];
+    if (!platformStatus) return list;
+    
+    ['facebook', 'instagram', 'threads'].forEach(p => {
+      if (activePlatform === 'all' || activePlatform === p) {
+        const platInfo = platformStatus[p];
+        if (platInfo?.accounts && platInfo.accounts.length > 0) {
+          platInfo.accounts.forEach(acc => {
+            list.push({
+              id: acc.id || acc.name,
+              name: acc.name,
+              platform: p,
+            });
+          });
+        }
+      }
+    });
+    return list;
+  }, [platformStatus, activePlatform]);
+
   // Fetch initial data
   const fetchData = async () => {
     setLoading(true);
     try {
       const [postsRes, summaryRes, statusRes] = await Promise.all([
         api.get('/analytics/posts', {
-          params: { platform: activePlatform, sortBy, q: searchQuery }
+          params: {
+            platform: activePlatform,
+            account_id: activeAccount !== 'all' ? activeAccount : undefined,
+            sortBy,
+            q: searchQuery
+          }
         }),
         api.get('/analytics/posts/summary'),
         api.get('/analytics/posts/status')
@@ -85,7 +113,7 @@ export default function PostAnalytics() {
 
   useEffect(() => {
     fetchData();
-  }, [activePlatform, sortBy]);
+  }, [activePlatform, activeAccount, sortBy]);
 
   // Handle Search Debounce / Trigger
   const handleSearchSubmit = (e) => {
@@ -295,29 +323,35 @@ export default function PostAnalytics() {
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs">
             {/* Facebook Status */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-850 border border-slate-800">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-800">
               <span className={`w-2 h-2 rounded-full ${platformStatus?.facebook?.connected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-rose-500'}`} />
               <span className="text-slate-400 font-medium">Facebook:</span>
               <span className="text-slate-200 font-semibold">
-                {platformStatus?.facebook?.connected ? platformStatus.facebook.account_name || 'Connected' : 'Disconnected'}
+                {platformStatus?.facebook?.connected
+                  ? `${platformStatus.facebook.count > 1 ? `(${platformStatus.facebook.count} Akun) ` : ''}${platformStatus.facebook.account_name}`
+                  : 'Disconnected'}
               </span>
             </div>
 
             {/* Instagram Status */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-850 border border-slate-800">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-800">
               <span className={`w-2 h-2 rounded-full ${platformStatus?.instagram?.connected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-rose-500'}`} />
               <span className="text-slate-400 font-medium">Instagram:</span>
               <span className="text-slate-200 font-semibold">
-                {platformStatus?.instagram?.connected ? platformStatus.instagram.account_name || 'Connected' : 'Disconnected'}
+                {platformStatus?.instagram?.connected
+                  ? `${platformStatus.instagram.count > 1 ? `(${platformStatus.instagram.count} Akun) ` : ''}${platformStatus.instagram.account_name}`
+                  : 'Disconnected'}
               </span>
             </div>
 
             {/* Threads Status */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-850 border border-slate-800">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-800">
               <span className={`w-2 h-2 rounded-full ${platformStatus?.threads?.connected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-rose-500'}`} />
               <span className="text-slate-400 font-medium">Threads:</span>
               <span className="text-slate-200 font-semibold">
-                {platformStatus?.threads?.connected ? platformStatus.threads.account_name || 'Connected' : 'Disconnected'}
+                {platformStatus?.threads?.connected
+                  ? `${platformStatus.threads.count > 1 ? `(${platformStatus.threads.count} Akun) ` : ''}${platformStatus.threads.account_name}`
+                  : 'Disconnected'}
               </span>
             </div>
           </div>
@@ -510,8 +544,26 @@ export default function PostAnalytics() {
           })}
         </div>
 
-        {/* Search & Sort */}
-        <div className="flex items-center gap-2">
+        {/* Search, Account Filter & Sort */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Account Filter */}
+          {availableAccounts.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <select
+                value={activeAccount}
+                onChange={(e) => setActiveAccount(e.target.value)}
+                className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-indigo-300 focus:outline-none focus:border-indigo-500 max-w-[180px] truncate"
+              >
+                <option value="all">Semua Akun ({availableAccounts.length})</option>
+                {availableAccounts.map((acc, idx) => (
+                  <option key={idx} value={acc.name || acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <form onSubmit={handleSearchSubmit} className="relative flex-1 sm:w-64">
             <input
               type="text"
