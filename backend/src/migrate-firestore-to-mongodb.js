@@ -1,12 +1,14 @@
 /**
  * Script Migrasi Otomatis Seluruh Data dari Firebase Firestore ke MongoDB Atlas
  */
-require('dotenv').config({ path: './.env' });
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
 const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getDb } = require('./config/mongo');
-const path = require('path');
-const fs = require('fs');
 
 async function migrateData() {
   console.log('=== 🚀 MEMULAI MIGRASI DATA DARI FIRESTORE KE MONGODB ATLAS ===\n');
@@ -28,8 +30,11 @@ async function migrateData() {
     serviceAccount = JSON.parse(buff.toString('utf-8'));
   } else {
     const localKeyPath = path.resolve(__dirname, '..', 'serviceAccountKey.json');
+    const rootKeyPath = path.resolve(__dirname, '..', '..', 'serviceAccountKey.json');
     if (fs.existsSync(localKeyPath)) {
       serviceAccount = require(localKeyPath);
+    } else if (fs.existsSync(rootKeyPath)) {
+      serviceAccount = require(rootKeyPath);
     }
   }
 
