@@ -27,7 +27,8 @@ import {
   Activity,
   ShieldCheck,
   ChevronRight,
-  PieChart
+  PieChart,
+  UserCheck
 } from 'lucide-react';
 
 export default function LinkAnalytics() {
@@ -36,6 +37,7 @@ export default function LinkAnalytics() {
   const [links, setLinks] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('clicks');
+  const [timeRange, setTimeRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
   const [selectedLinkDetail, setSelectedLinkDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [singleLinkData, setSingleLinkData] = useState(null);
@@ -68,7 +70,7 @@ export default function LinkAnalytics() {
     setLoading(true);
     try {
       const [overviewRes, linksRes] = await Promise.all([
-        api.get('/analytics/overview'),
+        api.get(`/analytics/overview?range=${timeRange}`),
         api.get(`/analytics/links?sortBy=${sortBy}&q=${encodeURIComponent(searchQuery)}`)
       ]);
       setOverview(overviewRes.data);
@@ -82,7 +84,7 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     fetchAnalyticsData();
-  }, [sortBy]);
+  }, [sortBy, timeRange]);
 
   // Debounced search
   useEffect(() => {
@@ -138,37 +140,49 @@ export default function LinkAnalytics() {
     try {
       await api.delete(`/analytics/links/${code}`);
       setLinks(prev => prev.filter(l => l.code !== code));
-      if (selectedLinkDetail?.code === code) setSelectedLinkDetail(null);
-      showToast('Shortlink berhasil dihapus.');
+      showToast(`Shortlink /s/${code} berhasil dihapus.`);
     } catch (err) {
       alert('Gagal menghapus shortlink.');
     }
   };
 
-  // Helper colors for platforms
   const getPlatformBadge = (plat) => {
-    switch (plat) {
-      case 'Instagram':
-        return 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border-pink-500/30';
-      case 'Facebook':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      case 'Threads':
-        return 'bg-slate-700/50 text-slate-200 border-slate-600';
-      case 'WhatsApp':
-        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-      case 'TikTok':
-        return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
-      case 'Twitter / X':
-        return 'bg-sky-500/20 text-sky-300 border-sky-500/30';
-      default:
-        return 'bg-slate-800 text-slate-300 border-slate-700';
+    const p = String(plat || '').toLowerCase();
+    if (p.includes('instagram')) {
+      return 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border-pink-500/30';
     }
+    if (p.includes('facebook') || p === 'fb') {
+      return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+    }
+    if (p.includes('threads')) {
+      return 'bg-slate-700/60 text-slate-100 border-slate-500/60';
+    }
+    if (p.includes('whatsapp')) {
+      return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+    }
+    if (p.includes('tiktok')) {
+      return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+    }
+    if (p.includes('twitter') || p.includes('x')) {
+      return 'bg-sky-500/20 text-sky-300 border-sky-500/30';
+    }
+    return 'bg-slate-800 text-slate-300 border-slate-700';
   };
 
   // Max value calculation for chart scaling
   const maxTrendClicks = overview?.trend?.length > 0 
     ? Math.max(...overview.trend.map(t => t.clicks), 5)
     : 10;
+
+  const getTimeRangeTitle = () => {
+    switch (timeRange) {
+      case 'today': return 'Tren Klik Hari Ini (Per Jam)';
+      case '7d': return 'Tren Klik 7 Hari Terakhir';
+      case '30d': return 'Tren Klik 30 Hari Terakhir';
+      case 'all': return 'Tren Klik Sepanjang Waktu';
+      default: return 'Tren Klik';
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -181,7 +195,7 @@ export default function LinkAnalytics() {
       )}
 
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800/80 p-5 sm:p-6 rounded-3xl backdrop-blur-xl">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-slate-900/60 border border-slate-800/80 p-5 sm:p-6 rounded-3xl backdrop-blur-xl">
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
             <div className="p-2.5 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-400">
@@ -195,25 +209,70 @@ export default function LinkAnalytics() {
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                Pantau performa klik, asal media sosial, dan konversi produk Shopee secara real-time.
+                Pantau performa klik, asal media sosial (Facebook, Threads, IG), dan konversi Shopee secara real-time.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
+        {/* Action Controls & Time Range Filter */}
+        <div className="flex flex-wrap items-center gap-2.5 self-stretch lg:self-auto">
+          {/* Time Range Pills */}
+          <div className="flex items-center bg-slate-950/80 p-1 rounded-2xl border border-slate-800">
+            <button
+              onClick={() => setTimeRange('today')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                timeRange === 'today'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Hari Ini
+            </button>
+            <button
+              onClick={() => setTimeRange('7d')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                timeRange === '7d'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              7 Hari
+            </button>
+            <button
+              onClick={() => setTimeRange('30d')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                timeRange === '30d'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              30 Hari
+            </button>
+            <button
+              onClick={() => setTimeRange('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                timeRange === 'all'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Semua
+            </button>
+          </div>
+
           <button
             onClick={() => setShowCustomModal(true)}
-            className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
           >
-            <Plus className="w-4 h-4 text-indigo-400" />
+            <Plus className="w-3.5 h-3.5 text-indigo-400" />
             <span>Custom Slug</span>
           </button>
 
           <button
             onClick={fetchAnalyticsData}
             disabled={loading}
-            className="px-4 py-2.5 rounded-xl gradient-btn text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+            className="px-3.5 py-2 rounded-xl gradient-btn text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Segarkan</span>
@@ -223,10 +282,12 @@ export default function LinkAnalytics() {
 
       {/* 4 Hero KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Clicks */}
+        {/* Total Clicks in Period */}
         <div className="p-5 bg-slate-900/60 border border-slate-800/80 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition-all">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Klik Link</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Total Klik ({timeRange === 'today' ? 'Hari Ini' : timeRange === '7d' ? '7 Hari' : timeRange === '30d' ? '30 Hari' : 'Semua'})
+            </span>
             <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
               <MousePointerClick className="w-4 h-4" />
             </div>
@@ -239,7 +300,9 @@ export default function LinkAnalytics() {
               +{overview?.summary?.clicks_today || 0} hari ini
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Akumulasi seluruh shortlink</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Total sepanjang waktu: {overview?.summary?.all_time_clicks?.toLocaleString('id-ID') || 0} klik
+          </p>
         </div>
 
         {/* Real Human Visitors */}
@@ -272,7 +335,7 @@ export default function LinkAnalytics() {
           <div className="text-xl sm:text-2xl font-extrabold text-pink-400 truncate">
             {overview?.summary?.top_platform || 'Belum Ada'}
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Media sosial penghasil klik tertinggi</p>
+          <p className="text-[11px] text-slate-500 mt-1">Platform penghasil klik tertinggi periode ini</p>
         </div>
 
         {/* Top Product */}
@@ -294,13 +357,13 @@ export default function LinkAnalytics() {
 
       {/* Main Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* 30-Day Trend Chart (8 Cols) */}
+        {/* Dynamic Trend Chart (8 Cols) */}
         <div className="lg:col-span-8 p-5 sm:p-6 bg-slate-900/60 border border-slate-800/80 rounded-3xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-indigo-400" />
-                <span>Tren Klik 30 Hari Terakhir</span>
+                <span>{getTimeRangeTitle()}</span>
               </h3>
               <p className="text-xs text-slate-400">Aktivitas klik harian dari seluruh tautan affiliate</p>
             </div>
@@ -323,13 +386,13 @@ export default function LinkAnalytics() {
               const isToday = idx === overview.trend.length - 1;
               return (
                 <div
-                  key={t.date}
-                  className="flex-1 min-w-[12px] flex flex-col items-center gap-1.5 group relative"
+                  key={t.date || idx}
+                  className="flex-1 min-w-[14px] flex flex-col items-center gap-1.5 group relative"
                 >
                   {/* Tooltip */}
                   <div className="absolute -top-12 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-950 border border-slate-700 text-[10px] text-white px-2 py-1 rounded-lg shadow-xl pointer-events-none z-20 whitespace-nowrap">
                     <p className="font-bold">{t.date}</p>
-                    <p className="text-indigo-300">{t.clicks} total ({t.human} manusia)</p>
+                    <p className="text-indigo-300">{t.clicks} total ({t.human} manusia, {t.bot} bot)</p>
                   </div>
 
                   <div className="w-full h-44 flex items-end justify-center">
@@ -344,8 +407,8 @@ export default function LinkAnalytics() {
                       }`}
                     />
                   </div>
-                  <span className="text-[9px] text-slate-500 group-hover:text-slate-300">
-                    {t.date.slice(8)}
+                  <span className="text-[9px] text-slate-500 group-hover:text-slate-300 font-mono">
+                    {timeRange === 'today' ? t.date : t.date.length > 5 ? t.date.slice(5) : t.date}
                   </span>
                 </div>
               );
@@ -353,12 +416,12 @@ export default function LinkAnalytics() {
           </div>
         </div>
 
-        {/* Platform Breakdown Donut / List (4 Cols) */}
+        {/* Platform & Account Breakdown (4 Cols) */}
         <div className="lg:col-span-4 p-5 sm:p-6 bg-slate-900/60 border border-slate-800/80 rounded-3xl space-y-4">
           <div className="space-y-0.5">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <PieChart className="w-4 h-4 text-pink-400" />
-              <span>Distribusi Platform</span>
+              <span>Distribusi Platform & Akun</span>
             </h3>
             <p className="text-xs text-slate-400">Pangsa trafik dari tiap media sosial</p>
           </div>
@@ -370,7 +433,16 @@ export default function LinkAnalytics() {
               return (
                 <div key={plat} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-300">{plat}</span>
+                    <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${
+                        plat === 'Facebook' ? 'bg-blue-500' :
+                        plat === 'Threads' ? 'bg-slate-300' :
+                        plat === 'Instagram' ? 'bg-pink-500' :
+                        plat === 'TikTok' ? 'bg-cyan-400' :
+                        plat === 'WhatsApp' ? 'bg-emerald-500' : 'bg-indigo-500'
+                      }`} />
+                      {plat}
+                    </span>
                     <span className="font-bold text-slate-400">{count} klik ({percent}%)</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden">
@@ -379,7 +451,7 @@ export default function LinkAnalytics() {
                       className={`h-full rounded-full transition-all duration-500 ${
                         plat === 'Instagram' ? 'bg-gradient-to-r from-pink-500 to-purple-500' :
                         plat === 'Facebook' ? 'bg-blue-500' :
-                        plat === 'Threads' ? 'bg-slate-400' :
+                        plat === 'Threads' ? 'bg-slate-300' :
                         plat === 'WhatsApp' ? 'bg-emerald-500' :
                         plat === 'TikTok' ? 'bg-cyan-400' : 'bg-indigo-500'
                       }`}
@@ -390,7 +462,21 @@ export default function LinkAnalytics() {
             })}
           </div>
 
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+          {/* Account Breakdown Preview */}
+          {overview?.account_breakdown && Object.keys(overview.account_breakdown).length > 0 && (
+            <div className="pt-3 border-t border-slate-800 space-y-1.5">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Per Akun Sosial:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(overview.account_breakdown).map(([acc, c]) => (
+                  <span key={acc} className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[10px] text-slate-300 font-medium">
+                    👤 {acc}: <strong className="text-white">{c}</strong>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
             <span>Perangkat:</span>
             <span className="text-slate-200 font-semibold">
               📱 Mobile {overview?.device_breakdown?.Mobile || 0} • 💻 Desktop {overview?.device_breakdown?.Desktop || 0}
@@ -457,6 +543,7 @@ export default function LinkAnalytics() {
               <thead className="text-slate-400 font-bold uppercase tracking-wider border-b border-slate-800/80 text-[10px] bg-slate-950/40">
                 <tr>
                   <th className="py-3 px-4">Produk & Judul</th>
+                  <th className="py-3 px-4">Platform & Target</th>
                   <th className="py-3 px-4">Shortlink</th>
                   <th className="py-3 px-4 text-center">Total Klik</th>
                   <th className="py-3 px-4 text-center">Pengunjung Asli</th>
@@ -491,6 +578,20 @@ export default function LinkAnalytics() {
                             </p>
                           )}
                         </div>
+                      </div>
+                    </td>
+
+                    {/* Platform & Account Target */}
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col gap-1">
+                        <span className={`w-fit px-2 py-0.5 rounded-md text-[10px] font-bold border ${getPlatformBadge(link.platform || link.tracking?.platform)}`}>
+                          {link.platform || link.tracking?.platform || 'Multi-Platform'}
+                        </span>
+                        {link.tracking?.account_name && (
+                          <span className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                            @{link.tracking.account_name}
+                          </span>
+                        )}
                       </div>
                     </td>
 

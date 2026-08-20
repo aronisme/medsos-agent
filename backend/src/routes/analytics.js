@@ -13,11 +13,30 @@ const formatDateKey = (d) => {
   return `${year}-${month}-${day}`;
 };
 
+// Helper to normalize platform name
+function normalizePlatformName(p) {
+  if (!p) return 'Direct / Link';
+  const clean = String(p).trim().toLowerCase();
+  if (clean === 'facebook' || clean === 'fb' || clean.includes('facebook') || clean.includes('fb.')) return 'Facebook';
+  if (clean === 'threads' || clean.includes('threads') || clean === 'barcelona') return 'Threads';
+  if (clean === 'instagram' || clean === 'ig' || clean.includes('instagram')) return 'Instagram';
+  if (clean === 'tiktok' || clean.includes('tiktok')) return 'TikTok';
+  if (clean === 'whatsapp' || clean.includes('whatsapp') || clean === 'wa.me') return 'WhatsApp';
+  if (clean === 'telegram' || clean.includes('telegram') || clean === 't.me') return 'Telegram';
+  if (clean === 'twitter' || clean === 'x' || clean === 'twitter / x' || clean.includes('twitter') || clean === 't.co') return 'Twitter / X';
+  if (clean === 'youtube' || clean.includes('youtube') || clean === 'youtu.be') return 'YouTube';
+  if (clean === 'pinterest' || clean.includes('pinterest')) return 'Pinterest';
+  if (clean === 'google search' || clean === 'google' || clean.includes('google')) return 'Google Search';
+  if (clean === 'direct' || clean === 'direct / link' || clean === '-') return 'Direct / Link';
+  return p;
+}
+
 // GET /api/analytics/overview
-// Comprehensive KPI & Aggregated Analytics for the Dashboard
+// Comprehensive KPI & Aggregated Analytics with Dynamic Range (today, 7d, 30d, all)
 router.get('/overview', async (req, res) => {
   try {
     const userId = req.user.id;
+    const { range = '7d' } = req.query; // 'today' | '7d' | '30d' | 'all'
     const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
 
     // 1. Fetch all short links belonging to user (or system default)
@@ -33,9 +52,9 @@ router.get('/overview', async (req, res) => {
     }));
 
     let totalLinks = links.length;
-    let totalClicks = 0;
-    let totalHumanClicks = 0;
-    let totalBotClicks = 0;
+    let totalClicksAllTime = 0;
+    let totalHumanClicksAllTime = 0;
+    let totalBotClicksAllTime = 0;
 
     let topProduct = null;
     let maxClicks = -1;
@@ -45,9 +64,9 @@ router.get('/overview', async (req, res) => {
       const human = Number(link.human_clicks) || clicks;
       const bot = Number(link.bot_clicks) || 0;
 
-      totalClicks += clicks;
-      totalHumanClicks += human;
-      totalBotClicks += bot;
+      totalClicksAllTime += clicks;
+      totalHumanClicksAllTime += human;
+      totalBotClicksAllTime += bot;
 
       if (clicks > maxClicks && link.title) {
         maxClicks = clicks;
@@ -60,25 +79,72 @@ router.get('/overview', async (req, res) => {
       }
     });
 
-    // 2. Fetch click logs for user (in-memory date filter to avoid Firestore composite index requirements)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyDaysIso = thirtyDaysAgo.toISOString();
-
+    // 2. Fetch all click logs for user
     const clicksSnap = await db.collection('link_clicks')
       .where('user_id', 'in', [userId, 'system'])
       .get();
 
     const allClickDocs = clicksSnap.docs.map(doc => doc.data());
-    const clickLogs = allClickDocs.filter(c => (c.timestamp || '') >= thirtyDaysIso);
+    const now = new Date();
+    const todayKey = formatDateKey(now);
 
-    // Generate 30-day continuous map
-    const trendMap = new Map();
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const k = formatDateKey(d);
-      trendMap.set(k, { date: k, clicks: 0, human: 0, bot: 0 });
+    // Filter click logs according to selected range
+    let filteredClickLogs = [];
+    let trendMap = new Map();
+    let isHourly = false;
+
+    if (range === 'today') {
+      isHourly = true;
+      filteredClickLogs = allClickDocs.filter(c => {
+        const logDate = c.date || (c.timestamp ? c.timestamp.split('T')[0] : null);
+        return logDate === todayKey;
+      });
+
+      // 24 Hourly Slots (00:00 - 23:00)
+      for (let h = 0; h < 24; h++) {
+        const label = `${String(h).padStart(2, '0')}:00`;
+        trendMap.set(h, { date: label, hour: h, clicks: 0, human: 0, bot: 0 });
+      }
+    } else if (range === '7d') {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      const sevenDaysIso = sevenDaysAgo.toISOString();
+
+      filteredClickLogs = allClickDocs.filter(c => (c.timestamp || '') >= sevenDaysIso);
+
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const k = formatDateKey(d);
+        trendMap.set(k, { date: k, clicks: 0, human: 0, bot: 0 });
+      }
+    } else if (range === 'all') {
+      filteredClickLogs = allClickDocs;
+
+      // Group all historical dates
+      const uniqueDates = Array.from(new Set(allClickDocs.map(c => c.date || (c.timestamp ? c.timestamp.split('T')[0] : null)).filter(Boolean))).sort();
+      if (uniqueDates.length === 0) {
+        uniqueDates.push(todayKey);
+      }
+      uniqueDates.forEach(k => {
+        trendMap.set(k, { date: k, clicks: 0, human: 0, bot: 0 });
+      });
+    } else {
+      // Default: '30d'
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+      const thirtyDaysIso = thirtyDaysAgo.toISOString();
+
+      filteredClickLogs = allClickDocs.filter(c => (c.timestamp || '') >= thirtyDaysIso);
+
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const k = formatDateKey(d);
+        trendMap.set(k, { date: k, clicks: 0, human: 0, bot: 0 });
+      }
     }
 
     const platformBreakdown = {
@@ -108,28 +174,54 @@ router.get('/overview', async (req, res) => {
       Lainnya: 0
     };
 
-    const todayKey = formatDateKey(new Date());
+    const accountBreakdown = {};
+
+    let periodTotalClicks = 0;
+    let periodHumanClicks = 0;
+    let periodBotClicks = 0;
     let clicksToday = 0;
 
-    clickLogs.forEach(c => {
-      const logDate = c.date || (c.timestamp ? c.timestamp.split('T')[0] : null);
-      if (logDate && trendMap.has(logDate)) {
-        const item = trendMap.get(logDate);
-        item.clicks++;
-        if (c.is_bot) item.bot++;
-        else item.human++;
-      }
+    filteredClickLogs.forEach(c => {
+      periodTotalClicks++;
+      if (c.is_bot) periodBotClicks++;
+      else periodHumanClicks++;
 
+      const logDate = c.date || (c.timestamp ? c.timestamp.split('T')[0] : null);
       if (logDate === todayKey) {
         clicksToday++;
       }
 
-      // Platform distribution
-      const p = c.platform || 'Direct / Link';
-      if (platformBreakdown[p] !== undefined) {
-        platformBreakdown[p]++;
+      // Populate trend map
+      if (isHourly) {
+        const h = typeof c.hour === 'number' ? c.hour : (c.timestamp ? new Date(c.timestamp).getHours() : 0);
+        if (trendMap.has(h)) {
+          const item = trendMap.get(h);
+          item.clicks++;
+          if (c.is_bot) item.bot++;
+          else item.human++;
+        }
+      } else {
+        if (logDate && trendMap.has(logDate)) {
+          const item = trendMap.get(logDate);
+          item.clicks++;
+          if (c.is_bot) item.bot++;
+          else item.human++;
+        }
+      }
+
+      // Platform distribution (Normalized)
+      const rawPlatform = c.platform || 'Direct / Link';
+      const normalizedPlat = normalizePlatformName(rawPlatform);
+      if (platformBreakdown[normalizedPlat] !== undefined) {
+        platformBreakdown[normalizedPlat]++;
       } else {
         platformBreakdown['Lainnya']++;
+      }
+
+      // Account breakdown
+      const accName = c.account_name || 'Akun Utama';
+      if (accName) {
+        accountBreakdown[accName] = (accountBreakdown[accName] || 0) + 1;
       }
 
       // Device
@@ -149,11 +241,11 @@ router.get('/overview', async (req, res) => {
       }
     });
 
-    // Determine Top Platform
-    let topPlatform = 'Instagram';
+    // Determine Top Platform in Period
+    let topPlatform = 'Facebook';
     let topPlatformCount = -1;
     Object.entries(platformBreakdown).forEach(([plat, count]) => {
-      if (count > topPlatformCount && plat !== 'Lainnya') {
+      if (count > topPlatformCount && plat !== 'Lainnya' && plat !== 'Direct / Link') {
         topPlatformCount = count;
         topPlatform = plat;
       }
@@ -163,17 +255,20 @@ router.get('/overview', async (req, res) => {
 
     res.json({
       success: true,
+      range: range,
       summary: {
         total_links: totalLinks,
-        total_clicks: totalClicks,
-        human_clicks: totalHumanClicks,
-        bot_clicks: totalBotClicks,
+        total_clicks: periodTotalClicks,
+        human_clicks: periodHumanClicks,
+        bot_clicks: periodBotClicks,
+        all_time_clicks: totalClicksAllTime,
         clicks_today: clicksToday,
-        top_platform: totalClicks > 0 ? topPlatform : 'Belum ada data',
+        top_platform: periodTotalClicks > 0 ? topPlatform : 'Belum ada data',
         top_product: topProduct
       },
       trend: trend,
       platform_breakdown: platformBreakdown,
+      account_breakdown: accountBreakdown,
       device_breakdown: deviceBreakdown,
       os_breakdown: osBreakdown
     });

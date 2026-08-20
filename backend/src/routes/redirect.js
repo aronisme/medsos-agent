@@ -2,14 +2,49 @@ const express = require('express');
 const router = express.Router();
 const { db, FieldValue } = require('../config/firebase');
 
-// Utility: Classify Social Media / Traffic Source from Referer and User-Agent
-function classifyPlatform(referer = '', userAgent = '') {
-  const ref = String(referer).toLowerCase();
-  const ua = String(userAgent).toLowerCase();
+// Utility: Classify Social Media / Traffic Source from Referer, User-Agent, and Bound Shortlink Platform
+function classifyPlatform(referer = '', userAgent = '', boundPlatform = '') {
+  const ref = String(referer || '').toLowerCase();
+  const ua = String(userAgent || '').toLowerCase();
+  const bound = String(boundPlatform || '').toLowerCase();
 
-  if (ref.includes('instagram.com') || ua.includes('instagram')) return 'Instagram';
-  if (ref.includes('facebook.com') || ref.includes('fb.com') || ref.includes('fb.me') || ua.includes('fb_iab') || ua.includes('fbav') || ua.includes('facebook')) return 'Facebook';
-  if (ref.includes('threads.net') || ua.includes('barcelona') || ua.includes('threads')) return 'Threads';
+  // 1. Check Threads FIRST (Threads User-Agent contains 'barcelona' and sometimes 'instagram')
+  if (
+    ref.includes('threads.net') ||
+    ref.includes('threads.com') ||
+    ref.includes('l.threads.com') ||
+    ref.includes('l.threads.net') ||
+    ua.includes('barcelona') ||
+    ua.includes('threads')
+  ) {
+    return 'Threads';
+  }
+
+  // 2. Check Facebook
+  if (
+    ref.includes('facebook.com') ||
+    ref.includes('fb.com') ||
+    ref.includes('fb.me') ||
+    ref.includes('l.facebook.com') ||
+    ref.includes('lm.facebook.com') ||
+    ref.includes('m.facebook.com') ||
+    ua.includes('fb_iab') ||
+    ua.includes('fbav') ||
+    ua.includes('facebook')
+  ) {
+    return 'Facebook';
+  }
+
+  // 3. Check Instagram (Pastikan bukan Barcelona/Threads)
+  if (
+    (ref.includes('instagram.com') || ref.includes('l.instagram.com') || ua.includes('instagram')) &&
+    !ua.includes('barcelona') &&
+    !ua.includes('threads')
+  ) {
+    return 'Instagram';
+  }
+
+  // 4. Other Social Platforms
   if (ref.includes('tiktok.com') || ua.includes('tiktok') || ua.includes('bytedance')) return 'TikTok';
   if (ref.includes('whatsapp') || ref.includes('wa.me') || ua.includes('whatsapp')) return 'WhatsApp';
   if (ref.includes('telegram') || ref.includes('t.me') || ua.includes('telegram')) return 'Telegram';
@@ -18,12 +53,26 @@ function classifyPlatform(referer = '', userAgent = '') {
   if (ref.includes('pinterest.com')) return 'Pinterest';
   if (ref.includes('google.com')) return 'Google Search';
 
-  if (!referer || referer === '-' || ref === 'direct') return 'Direct / Link';
-  
+  // 5. Fallback ke Bound Platform jika direct / referer kosong (karena browser mobile sering strip referrer)
+  if (!referer || referer === '-' || ref === 'direct' || ref === '') {
+    if (bound === 'threads') return 'Threads';
+    if (bound === 'facebook') return 'Facebook';
+    if (bound === 'instagram') return 'Instagram';
+    if (bound === 'tiktok') return 'TikTok';
+    return 'Direct / Link';
+  }
+
   try {
     const url = new URL(referer);
-    return url.hostname.replace(/^www\./, '');
+    const host = url.hostname.replace(/^www\./, '');
+    if (host.includes('threads')) return 'Threads';
+    if (host.includes('facebook') || host.includes('fb.')) return 'Facebook';
+    if (host.includes('instagram')) return 'Instagram';
+    return host;
   } catch {
+    if (bound === 'threads') return 'Threads';
+    if (bound === 'facebook') return 'Facebook';
+    if (bound === 'instagram') return 'Instagram';
     return 'Lainnya';
   }
 }
@@ -127,7 +176,7 @@ router.get('/:code', async (req, res) => {
     const userAgent = req.get('User-Agent') || '';
     const referer = req.get('Referer') || req.get('Referrer') || '';
     const isBot = detectBot(userAgent);
-    const platform = classifyPlatform(referer, userAgent);
+    const platform = classifyPlatform(referer, userAgent, data.platform);
 
     // Persistent serverless cooldown check (12 seconds window per shortlink)
     // Eliminates Facebook Link-Shim proxy pre-checks, pre-rendering, and double-taps
@@ -191,6 +240,9 @@ router.get('/:code', async (req, res) => {
           product_url: data.product_url || '',
           destination_url: destination,
           platform: platform,
+          post_id: data.post_id || data.tracking?.post_id || '',
+          account_id: data.account_id || data.tracking?.account_id || '',
+          account_name: data.account_name || data.tracking?.account_name || '',
           referrer: referer.slice(0, 255),
           device: isBot ? 'Bot' : device,
           os: isBot ? 'Crawler' : os,
