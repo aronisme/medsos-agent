@@ -36,6 +36,7 @@ function normalizePlatformName(p) {
 router.get('/overview', async (req, res) => {
   try {
     const userId = req.user.id;
+    const { range = '30d' } = req.query;
     const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
 
     // 1. Fetch all short links belonging to user (or system default)
