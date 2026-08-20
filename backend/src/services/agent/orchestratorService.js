@@ -444,8 +444,13 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
         // 6.1. Profile Produk
         const profile = await profileShopeeProduct(selectedProduct, userId);
 
-        // 6.2. Evaluasi Media
-        const mediaCuration = await curateProductMedia(selectedProduct, 'auto', userId);
+        // 6.2. Evaluasi Media Khusus untuk Platform Target (Anti-Reuse Per Platform)
+        const mediaCuration = await curateProductMedia(selectedProduct, 'auto', platform, userId);
+        if (mediaCuration.no_fresh_media || !mediaCuration.selected_media || mediaCuration.selected_media.length === 0) {
+          logSteps.push(`[${platform.toUpperCase()}] Produk "${selectedProduct.title.slice(0, 25)}..." dilewati: Semua media sudah pernah diposting di ${platform}.`);
+          continue;
+        }
+
         const formattedMedia = (mediaCuration.selected_media || []).map(item => {
           const url = typeof item === 'string' ? item : item?.url || item?.media_url || '';
           const type = (typeof item === 'object' && item?.type) ? item.type : (mediaCuration.media_type || 'image');

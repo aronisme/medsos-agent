@@ -76,6 +76,12 @@ async function recordPostMemory(memoryData) {
     // Update Product's internal quick references in affiliate_products
     await updateProductQuarterlySnapshot(product_id, quarter, user_id);
 
+    // Tandai media yang telah digunakan pada platform ini
+    if (product_id && payload.context_at_post?.media_urls?.length > 0 && payload.context_at_post?.platform) {
+      const { markMediaUsedOnPlatform } = require('./mediaEvaluatorService');
+      await markMediaUsedOnPlatform(product_id, payload.context_at_post.media_urls, payload.context_at_post.platform, user_id);
+    }
+
     return payload;
   } catch (err) {
     console.error('[recordPostMemory Error]:', err.message);
