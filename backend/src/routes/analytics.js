@@ -36,8 +36,7 @@ function normalizePlatformName(p) {
 router.get('/overview', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { range = '7d' } = req.query; // 'today' | '7d' | '30d' | 'all'
-    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
 
     // 1. Fetch all short links belonging to user (or system default)
     const linksSnap = await db.collection('short_links')
@@ -285,7 +284,7 @@ router.get('/links', async (req, res) => {
   try {
     const userId = req.user.id;
     const { q, sortBy = 'clicks' } = req.query;
-    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
 
     const snap = await db.collection('short_links')
       .where('user_id', 'in', [userId, 'system'])
@@ -346,7 +345,7 @@ router.get('/links', async (req, res) => {
 router.get('/links/:code', async (req, res) => {
   try {
     const { code } = req.params;
-    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
 
     const docSnap = await db.collection('short_links').doc(code).get();
     if (!docSnap.exists) {
@@ -434,7 +433,7 @@ router.post('/links/custom', async (req, res) => {
     }
 
     const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338';
-    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
     const now = new Date().toISOString();
 
     const shortUrl = `${baseUrl}/s/${cleanSlug}`;

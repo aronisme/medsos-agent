@@ -208,7 +208,8 @@ async function createPostShortlink(product, platform, userId) {
       updated_at: now
     });
 
-    const publicUrl = process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app';
+    const rawPublicUrl = process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app';
+    const publicUrl = rawPublicUrl.replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
     return `${publicUrl}/s/${shortCode}`;
   } catch (err) {
     console.error('[createPostShortlink Error]:', err.message);

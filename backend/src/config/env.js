@@ -11,7 +11,7 @@ const env = {
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-small-latest',
   fbAppId: process.env.FB_APP_ID || '',
   fbAppSecret: process.env.FB_APP_SECRET || '',
-  baseUrl: process.env.BASE_URL || 'http://localhost:4000',
+  baseUrl: (process.env.BASE_URL || process.env.PUBLIC_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app'),
   dryRun: (process.env.DRY_RUN || 'true').toLowerCase() !== 'false',
   mongodbUri: process.env.MONGODB_URI || process.env.MONGO_URL || '',
 };

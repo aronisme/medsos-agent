@@ -153,7 +153,7 @@ router.post('/', async (req, res) => {
       updated_at: now
     });
 
-    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
     const shortUrl = `${baseUrl}/s/${shortCode}`;
 
     res.json({
@@ -180,7 +180,7 @@ router.post('/batch', async (req, res) => {
     }
 
     const affiliateId = process.env.SHOPEE_AFFILIATE_ID || '11328861338';
-    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
     const now = new Date().toISOString();
     
     const results = [];
