@@ -628,5 +628,7 @@ module.exports = {
   getAgentConfig,
   updateAgentConfig,
   runAutonomousCycle,
+  createPostShortlink,
+  getValidShopeeProductUrl,
   DEFAULT_CONFIG
 };
