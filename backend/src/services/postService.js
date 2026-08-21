@@ -175,6 +175,31 @@ async function publishPostNow(postId) {
     } catch (memErr) {
       console.warn('[publishPostNow] Memory sync warning:', memErr.message);
     }
+
+    // Sync: Catat ke threads_post_context jika ada target Threads yang sukses
+    try {
+      const threadsTargets = targets.filter(t => t.platform === 'threads' && t.status === 'success' && t.post_id_on_platform);
+      for (const tt of threadsTargets) {
+        const memRef = db.collection('product_post_memory').doc(`mem_${postId}`);
+        const memDoc = await memRef.get();
+        const productId = memDoc.exists ? memDoc.data().product_id : (post.product_id || null);
+
+        const ctxRef = db.collection('threads_post_context').doc(`ctx_${tt.post_id_on_platform}`);
+        await ctxRef.set({
+          id: `ctx_${tt.post_id_on_platform}`,
+          account_id: tt.account_id,
+          thread_id: String(tt.post_id_on_platform),
+          post_id: postId,
+          user_id: post.user_id,
+          product_id: productId,
+          caption: post.content || '',
+          published_at: new Date().toISOString(),
+          status: 'ACTIVE',
+        }, { merge: true });
+      }
+    } catch (ctxErr) {
+      console.warn('[publishPostNow] Threads context sync warning:', ctxErr.message);
+    }
   }
 
   return results;

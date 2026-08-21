@@ -16,6 +16,7 @@ import PostAnalytics from './components/PostAnalytics';
 import AgentDashboard from './components/AgentDashboard';
 import ProductQuarterBoard from './components/ProductQuarterBoard';
 import TemplateExperimentLab from './components/TemplateExperimentLab';
+import ThreadsAutoMarketing from './components/ThreadsAutoMarketing';
 import api from './api/client';
 
 
@@ -65,6 +66,7 @@ export default function App() {
 
           {activeTab === 'dashboard' && <StatsOverview setActiveTab={setActiveTab} />}
           {activeTab === 'agent_dashboard' && <AgentDashboard setActiveTab={setActiveTab} />}
+          {activeTab === 'threads_marketing' && <ThreadsAutoMarketing />}
           {activeTab === 'product_lifecycle' && <ProductQuarterBoard />}
           {activeTab === 'experiment_lab' && <TemplateExperimentLab />}
           {activeTab === 'post_analytics' && <PostAnalytics />}

@@ -20,6 +20,7 @@ const analyticsRoutes = require('./routes/analytics');
 const postAnalyticsRoutes = require('./routes/post-analytics');
 const agentOrchestratorRoutes = require('./routes/agent-orchestrator');
 const telegramRoutes = require('./routes/telegram');
+const threadsMarketingRoutes = require('./routes/threads-marketing');
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use('/api/content-bank', affiliateProductsRoutes);
 app.use('/api/analytics/posts', postAnalyticsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/telegram', telegramRoutes);
+app.use('/api/threads-marketing', threadsMarketingRoutes);
 
 // Register redirect route (at root /s/)
 app.use('/s', redirectRoutes);

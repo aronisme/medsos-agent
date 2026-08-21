@@ -176,6 +176,34 @@ async function processScheduledPosts() {
       });
     }
 
+    // Check 4: Inbound Threads Auto-Reply Polling (Persisten setiap 10 menit)
+    const lastInboundScan = Number(lockData.last_inbound_scan_epoch) || 0;
+    const tenMinutes = 10 * 60 * 1000;
+    if (now - lastInboundScan >= tenMinutes) {
+      updateLocks.last_inbound_scan_epoch = now;
+      setImmediate(async () => {
+        try {
+          const accountsSnap = await db.collection('social_accounts')
+            .where('platform', '==', 'threads')
+            .where('is_active', 'in', [1, true, '1'])
+            .get();
+
+          const activeUserIds = new Set();
+          accountsSnap.forEach(d => {
+            const u = d.data().user_id;
+            if (u) activeUserIds.add(u);
+          });
+
+          const { scanAndProcessInboundReplies } = require('../services/threads/inbound/inboundService');
+          for (const uid of activeUserIds) {
+            await scanAndProcessInboundReplies(uid);
+          }
+        } catch (inboundErr) {
+          console.error('[scheduler] Error running background inbound threads scan:', inboundErr.message);
+        }
+      });
+    }
+
     // Simpan timestamp lock terbaru jika ada background task yang dipicu
     if (Object.keys(updateLocks).length > 0) {
       await lockRef.set(updateLocks, { merge: true });

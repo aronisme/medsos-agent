@@ -14,6 +14,7 @@ import {
   Bot,
   Kanban,
   FlaskConical,
+  MessageSquare,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab }) {
@@ -22,6 +23,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
       title: 'Otomasi AI (Auto-Pilot)',
       items: [
         { id: 'agent_dashboard', label: 'Agent Command Center', icon: Bot, highlight: true },
+        { id: 'threads_marketing', label: 'Threads Marketing', icon: MessageSquare, highlight: true },
         { id: 'product_lifecycle', label: 'Siklus Hidup Produk', icon: Kanban, highlight: true },
         { id: 'experiment_lab', label: 'Lab Eksperimen & A/B', icon: FlaskConical, highlight: true },
       ]

@@ -1,0 +1,73 @@
+const { db } = require('../../../config/firebase');
+const { get } = require('../api/threadsApiClient');
+const { getReplies } = require('../api/threadsReplyApi');
+const { processSingleInboundReply } = require('./inboundDecisionEngine');
+
+/**
+ * Memindai komentar-komentar terbaru pada postingan akun Threads milik pengguna
+ * @param {string} userId - ID User
+ */
+async function scanAndProcessInboundReplies(userId) {
+  const summary = { totalScanned: 0, totalReplied: 0, errors: [] };
+
+  try {
+    // 1. Ambil seluruh akun Threads aktif milik pengguna ini
+    const accountsSnap = await db.collection('social_accounts')
+      .where('user_id', '==', userId)
+      .where('platform', '==', 'threads')
+      .where('is_active', 'in', [1, true, '1'])
+      .get();
+
+    if (accountsSnap.empty) {
+      return summary;
+    }
+
+    for (const accDoc of accountsSnap.docs) {
+      const account = { id: accDoc.id, ...accDoc.data() };
+      const token = account.access_token;
+      if (!token) continue;
+
+      try {
+        // 2. Ambil 5 postingan terbaru dari akun Threads ini
+        const postsRes = await get('me/threads', token, { fields: 'id,timestamp', limit: 5 });
+        const recentThreads = postsRes.data || [];
+
+        for (const thread of recentThreads) {
+          try {
+            // 3. Ambil komentar-komentar pada thread ini
+            const repliesRes = await getReplies(thread.id, token, { limit: 15 });
+            const replies = repliesRes.data || [];
+            summary.totalScanned += replies.length;
+
+            for (const reply of replies) {
+              const res = await processSingleInboundReply({
+                reply,
+                threadId: thread.id,
+                account,
+                userId,
+              });
+
+              if (res?.processed && res?.success) {
+                summary.totalReplied++;
+              }
+            }
+          } catch (replyErr) {
+            console.warn(`[InboundService] Warning fetching replies for thread #${thread.id}:`, replyErr.message);
+          }
+        }
+      } catch (accErr) {
+        console.error(`[InboundService] Error scanning account @${account.page_name}:`, accErr.message);
+        summary.errors.push(accErr.message);
+      }
+    }
+  } catch (err) {
+    console.error('[InboundService] Fatal error in scanAndProcessInboundReplies:', err.message);
+    summary.errors.push(err.message);
+  }
+
+  return summary;
+}
+
+module.exports = {
+  scanAndProcessInboundReplies,
+};
