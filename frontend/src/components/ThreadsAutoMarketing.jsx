@@ -130,6 +130,21 @@ export default function ThreadsAutoMarketing() {
     }
   };
 
+  const handleClearAllKeywords = async () => {
+    if (!window.confirm('Yakin ingin menghapus seluruh kata kunci pantauan?')) return;
+    setActionLoading('clear_all_keywords');
+    setMessage(null);
+    try {
+      const res = await api.delete('/threads-marketing/keywords/clear-all');
+      setMessage({ type: 'info', text: res.data.message || 'Seluruh kata kunci berhasil dihapus.' });
+      fetchData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || err.message });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleTriggerScan = async () => {
     setScanning(true);
     setMessage(null);
@@ -482,20 +497,39 @@ export default function ThreadsAutoMarketing() {
           </div>
 
           <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-3xl p-5">
-            <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <h3 className="font-bold text-sm text-white flex items-center gap-2">
                 <Search className="w-4 h-4 text-indigo-400" />
                 <span>Daftar Kata Kunci Aktif ({keywords.length})</span>
               </h3>
 
-              <button
-                onClick={handleAutoGenerateKeywords}
-                disabled={actionLoading === 'auto_keywords'}
-                className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
-              >
-                <Sparkles className={`w-3.5 h-3.5 ${actionLoading === 'auto_keywords' ? 'animate-spin' : ''}`} />
-                <span>{actionLoading === 'auto_keywords' ? 'Mengenerate...' : '✨ Generate dari Katalog'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAutoGenerateKeywords}
+                  disabled={actionLoading === 'auto_keywords'}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${actionLoading === 'auto_keywords' ? 'animate-spin' : ''}`} />
+                  <span>{actionLoading === 'auto_keywords' ? 'Mengenerate...' : '✨ Generate Top 15'}</span>
+                </button>
+
+                {keywords.length > 0 && (
+                  <button
+                    onClick={handleClearAllKeywords}
+                    disabled={actionLoading === 'clear_all_keywords'}
+                    className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all shadow-sm"
+                  >
+                    <span>Hapus Semua</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 mb-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 text-[11px] text-indigo-300 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 shrink-0 text-indigo-400" />
+              <span>
+                <b>Proteksi Kuota API:</b> Sistem memindai <b>3 kata kunci per siklus</b> secara bergiliran agar kuota mingguan Anda tetap aman & hemat.
+              </span>
             </div>
 
             {keywords.length === 0 ? (

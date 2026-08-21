@@ -160,6 +160,9 @@ router.post('/keywords/auto-generate', async (req, res) => {
           });
           generatedKeywords.push({ id: refCat.id, keyword: catPhrase, category: cat, priority: 2 });
         }
+
+        // Batasi maksimal 15 kata kunci teratas agar kuota dan daftar tetap efisien & rapi
+        if (generatedKeywords.length >= 15) break;
       }
     }
 
@@ -168,6 +171,23 @@ router.post('/keywords/auto-generate', async (req, res) => {
       message: `Berhasil men-generate ${generatedKeywords.length} kata kunci otomatis dari katalog produk!`,
       generatedKeywords,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/threads-marketing/keywords/clear-all
+router.delete('/keywords/clear-all', async (req, res) => {
+  try {
+    const snap = await db.collection('threads_monitoring_keywords')
+      .where('user_id', '==', req.user.id)
+      .get();
+
+    for (const doc of snap.docs) {
+      await db.collection('threads_monitoring_keywords').doc(doc.id).delete();
+    }
+
+    res.json({ success: true, message: `Berhasil menghapus ${snap.docs.length} kata kunci.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
