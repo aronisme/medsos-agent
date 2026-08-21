@@ -69,6 +69,17 @@ router.get('/keywords', async (req, res) => {
 // POST /api/threads-marketing/keywords/auto-generate
 router.post('/keywords/auto-generate', async (req, res) => {
   try {
+    const productsSnap = await db.collection('affiliate_products')
+      .where('user_id', '==', req.user.id)
+      .get();
+
+    const existingKwSnap = await db.collection('threads_monitoring_keywords')
+      .where('user_id', '==', req.user.id)
+      .get();
+
+    const existingKeywords = new Set(existingKwSnap.docs.map(d => d.data().keyword?.toLowerCase()));
+    const generatedKeywords = [];
+
     // 1. Ambil kategori dan kata kunci umum dari produk
     const highTrafficKeywords = [
       { keyword: 'rekomendasi outfit', category: 'fashion', priority: 1 },
@@ -99,7 +110,7 @@ router.post('/keywords/auto-generate', async (req, res) => {
       highTrafficKeywords.push({ keyword: `racun shopee ${cat}`, category: cat, priority: 2 });
     });
 
-    // Simpan kata kunci unik
+    // Simpan kata kunci unik (maksimal 15 kata kunci)
     for (const item of highTrafficKeywords.slice(0, 15)) {
       if (!existingKeywords.has(item.keyword)) {
         existingKeywords.add(item.keyword);
