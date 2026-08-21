@@ -66,26 +66,108 @@ router.get('/keywords', async (req, res) => {
   }
 });
 
-// POST /api/threads-marketing/keywords
-router.post('/keywords', async (req, res) => {
+// POST /api/threads-marketing/keywords/auto-generate
+router.post('/keywords/auto-generate', async (req, res) => {
   try {
-    const { keyword, category = 'general', priority = 1 } = req.body || {};
-    if (!keyword || !keyword.trim()) {
-      return res.status(400).json({ error: 'Kata kunci wajib diisi.' });
+    const productsSnap = await db.collection('affiliate_products')
+      .where('user_id', '==', req.user.id)
+      .get();
+
+    const existingKwSnap = await db.collection('threads_monitoring_keywords')
+      .where('user_id', '==', req.user.id)
+      .get();
+
+    const existingKeywords = new Set(existingKwSnap.docs.map(d => d.data().keyword?.toLowerCase()));
+    const generatedKeywords = [];
+
+    if (productsSnap.empty) {
+      // Default high-intent keywords if no products exist yet
+      const defaults = [
+        { keyword: 'racun shopee', category: 'general', priority: 1 },
+        { keyword: 'rekomendasi outfit', category: 'fashion', priority: 1 },
+        { keyword: 'spill link shopee', category: 'general', priority: 1 },
+        { keyword: 'rekomendasi baju murah', category: 'fashion', priority: 2 },
+      ];
+
+      for (const def of defaults) {
+        if (!existingKeywords.has(def.keyword)) {
+          const docRef = await db.collection('threads_monitoring_keywords').add({
+            user_id: req.user.id,
+            keyword: def.keyword,
+            category: def.category,
+            priority: def.priority,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            last_searched_at: null,
+          });
+          generatedKeywords.push({ id: docRef.id, ...def });
+        }
+      }
+    } else {
+      // Extract from active products
+      for (const doc of productsSnap.docs) {
+        const prod = doc.data();
+        const title = (prod.title || '').toLowerCase();
+        const cat = (prod.category || 'fashion').toLowerCase();
+
+        // 1. Ekstrak frasa judul 2-3 kata pertama
+        const cleanWords = title.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+        if (cleanWords.length >= 2) {
+          const phrase1 = `rekomendasi ${cleanWords.slice(0, 2).join(' ')}`;
+          const phrase2 = `spill ${cleanWords.slice(0, 2).join(' ')}`;
+          
+          if (!existingKeywords.has(phrase1)) {
+            existingKeywords.add(phrase1);
+            const ref1 = await db.collection('threads_monitoring_keywords').add({
+              user_id: req.user.id,
+              keyword: phrase1,
+              category: cat,
+              priority: 1,
+              is_active: true,
+              created_at: new Date().toISOString(),
+              last_searched_at: null,
+            });
+            generatedKeywords.push({ id: ref1.id, keyword: phrase1, category: cat, priority: 1 });
+          }
+
+          if (!existingKeywords.has(phrase2)) {
+            existingKeywords.add(phrase2);
+            const ref2 = await db.collection('threads_monitoring_keywords').add({
+              user_id: req.user.id,
+              keyword: phrase2,
+              category: cat,
+              priority: 2,
+              is_active: true,
+              created_at: new Date().toISOString(),
+              last_searched_at: null,
+            });
+            generatedKeywords.push({ id: ref2.id, keyword: phrase2, category: cat, priority: 2 });
+          }
+        }
+
+        // 2. Kategori keyword
+        const catPhrase = `racun shopee ${cat}`;
+        if (!existingKeywords.has(catPhrase)) {
+          existingKeywords.add(catPhrase);
+          const refCat = await db.collection('threads_monitoring_keywords').add({
+            user_id: req.user.id,
+            keyword: catPhrase,
+            category: cat,
+            priority: 2,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            last_searched_at: null,
+          });
+          generatedKeywords.push({ id: refCat.id, keyword: catPhrase, category: cat, priority: 2 });
+        }
+      }
     }
 
-    const newDoc = {
-      user_id: req.user.id,
-      keyword: keyword.trim().toLowerCase(),
-      category: category.trim(),
-      priority: Number(priority) || 1,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      last_searched_at: null,
-    };
-
-    const docRef = await db.collection('threads_monitoring_keywords').add(newDoc);
-    res.status(201).json({ success: true, keyword: { id: docRef.id, ...newDoc } });
+    res.json({
+      success: true,
+      message: `Berhasil men-generate ${generatedKeywords.length} kata kunci otomatis dari katalog produk!`,
+      generatedKeywords,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

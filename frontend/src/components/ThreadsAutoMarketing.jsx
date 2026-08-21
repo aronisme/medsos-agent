@@ -116,6 +116,20 @@ export default function ThreadsAutoMarketing() {
     }
   };
 
+  const handleAutoGenerateKeywords = async () => {
+    setActionLoading('auto_keywords');
+    setMessage(null);
+    try {
+      const res = await api.post('/threads-marketing/keywords/auto-generate');
+      setMessage({ type: 'success', text: res.data.message || 'Kata kunci berhasil di-generate dari katalog produk!' });
+      fetchData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || err.message });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleTriggerScan = async () => {
     setScanning(true);
     setMessage(null);
@@ -468,13 +482,34 @@ export default function ThreadsAutoMarketing() {
           </div>
 
           <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-3xl p-5">
-            <h3 className="font-bold text-sm text-white mb-3 flex items-center gap-2">
-              <Search className="w-4 h-4 text-indigo-400" />
-              <span>Daftar Kata Kunci Aktif ({keywords.length})</span>
-            </h3>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <Search className="w-4 h-4 text-indigo-400" />
+                <span>Daftar Kata Kunci Aktif ({keywords.length})</span>
+              </h3>
+
+              <button
+                onClick={handleAutoGenerateKeywords}
+                disabled={actionLoading === 'auto_keywords'}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+              >
+                <Sparkles className={`w-3.5 h-3.5 ${actionLoading === 'auto_keywords' ? 'animate-spin' : ''}`} />
+                <span>{actionLoading === 'auto_keywords' ? 'Mengenerate...' : '✨ Generate dari Katalog'}</span>
+              </button>
+            </div>
 
             {keywords.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-xs">Belum ada kata kunci yang ditambahkan.</div>
+              <div className="p-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-2xl space-y-3">
+                <p className="text-xs text-slate-400 font-medium">Belum ada kata kunci pantauan yang aktif.</p>
+                <button
+                  onClick={handleAutoGenerateKeywords}
+                  disabled={actionLoading === 'auto_keywords'}
+                  className="px-4 py-2 rounded-xl gradient-btn text-xs font-bold inline-flex items-center gap-2 shadow-lg"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Generate Kata Kunci Otomatis dari Produk Shopee</span>
+                </button>
+              </div>
             ) : (
               <div className="space-y-2">
                 {keywords.map((kw) => (
