@@ -27,6 +27,9 @@ export default function PostList() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [platformFilter, setPlatformFilter] = useState('all');
+  const [accountFilter, setAccountFilter] = useState('all');
+  const [accounts, setAccounts] = useState([]);
   const [selectedPost, setSelectedPost] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -36,11 +39,24 @@ export default function PostList() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isDeleteAllMode, setIsDeleteAllMode] = useState(false);
 
+  const fetchAccounts = async () => {
+    try {
+      const res = await api.get('/accounts');
+      setAccounts(res.data.accounts || []);
+    } catch (err) {
+      console.error('Gagal mengambil daftar akun', err);
+    }
+  };
+
   const fetchPosts = async () => {
     setLoading(true);
     try {
-      const url = statusFilter === 'all' ? '/posts' : `/posts?status=${statusFilter}`;
-      const res = await api.get(url);
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (platformFilter !== 'all') params.append('platform', platformFilter);
+      if (accountFilter !== 'all') params.append('account_id', accountFilter);
+
+      const res = await api.get(`/posts?${params.toString()}`);
       setPosts(res.data.posts || []);
       setSelectedIds([]);
     } catch (err) {
@@ -51,8 +67,16 @@ export default function PostList() {
   };
 
   useEffect(() => {
+    fetchAccounts();
+  }, []);
+
+  useEffect(() => {
     fetchPosts();
-  }, [statusFilter]);
+  }, [statusFilter, platformFilter, accountFilter]);
+
+  const filteredAccounts = accounts.filter(acc => 
+    platformFilter === 'all' || acc.platform === platformFilter
+  );
 
   // Selection helpers
   const isAllSelected = posts.length > 0 && selectedIds.length === posts.length;
@@ -82,11 +106,16 @@ export default function PostList() {
     setIsBulkDeleting(true);
     try {
       if (isDeleteAllMode) {
-        const res = await api.post('/posts/bulk-delete', { deleteAll: true, status: statusFilter });
+        const res = await api.post('/posts/bulk-delete', { 
+          deleteAll: true, 
+          status: statusFilter,
+          platform: platformFilter,
+          account_id: accountFilter
+        });
         if (res.data.success) {
-          setPosts([]);
           setSelectedIds([]);
           setShowBulkDeleteModal(false);
+          fetchPosts();
         }
       } else {
         const res = await api.post('/posts/bulk-delete', { ids: selectedIds });
@@ -212,6 +241,48 @@ export default function PostList() {
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+        </div>
+      </div>
+      
+      {/* Platform & Account Filter Dropdowns */}
+      <div className="flex flex-wrap items-center gap-4 bg-slate-900/40 p-4 rounded-3xl border border-slate-800/80 backdrop-blur-md">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-950 px-3.5 py-1.5 rounded-2xl border border-slate-800">
+            <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">Platform:</span>
+            <select
+              value={platformFilter}
+              onChange={(e) => {
+                setPlatformFilter(e.target.value);
+                setAccountFilter('all');
+              }}
+              className="bg-transparent border-none text-xs font-semibold text-slate-300 focus:outline-none cursor-pointer"
+            >
+              <option value="all" className="bg-slate-950 text-slate-300">Semua Platform</option>
+              <option value="facebook" className="bg-slate-950 text-slate-300">Facebook</option>
+              <option value="instagram" className="bg-slate-950 text-slate-300">Instagram</option>
+              <option value="threads" className="bg-slate-950 text-slate-300">Threads</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-950 px-3.5 py-1.5 rounded-2xl border border-slate-800">
+            <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">Akun:</span>
+            <select
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value)}
+              className="bg-transparent border-none text-xs font-semibold text-slate-300 focus:outline-none cursor-pointer max-w-[200px] truncate"
+            >
+              <option value="all" className="bg-slate-950 text-slate-300">Semua Akun</option>
+              {filteredAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id} className="bg-slate-950 text-slate-300">
+                  {acc.page_name ? `${acc.page_name} (${acc.platform})` : `${acc.platform} - ${acc.page_id}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate-500 ml-auto font-medium">
+          Ditemukan <span className="text-slate-300 font-bold">{posts.length}</span> postingan cocok
         </div>
       </div>
 
@@ -354,7 +425,7 @@ export default function PostList() {
             className="px-3 py-1.5 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-800/80 text-red-300 text-xs font-medium transition-all"
             title="Hapus semua postingan dalam filter ini"
           >
-            <span>Hapus Semua ({statusFilter})</span>
+            <span>Hapus Semua Sesuai Filter</span>
           </button>
         </div>
       )}
@@ -369,11 +440,11 @@ export default function PostList() {
 
             <div className="text-center space-y-1.5">
               <h3 className="text-lg font-extrabold text-white">
-                {isDeleteAllMode ? `Hapus Semua Postingan (${statusFilter})?` : `Hapus ${selectedIds.length} Postingan Terpilih?`}
+                {isDeleteAllMode ? 'Hapus Semua Postingan Sesuai Filter?' : `Hapus ${selectedIds.length} Postingan Terpilih?`}
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
                 {isDeleteAllMode
-                  ? `Tindakan ini akan menghapus seluruh ${posts.length} postingan dalam kategori '${statusFilter}' secara permanen.`
+                  ? `Tindakan ini akan menghapus seluruh ${posts.length} postingan yang cocok dengan filter aktif (Status: ${statusFilter}, Platform: ${platformFilter === 'all' ? 'Semua' : platformFilter}, Akun: ${accountFilter === 'all' ? 'Semua' : 'Terfilter'}) secara permanen.`
                   : `Anda akan menghapus ${selectedIds.length} postingan yang dipilih dari database.`}
               </p>
             </div>

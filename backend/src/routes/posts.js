@@ -6,18 +6,33 @@ const router = express.Router();
 
 router.use(authRequired);
 
-// GET /api/posts?status=draft|scheduled|posted|failed&limit=20
+// GET /api/posts?status=draft|scheduled|posted|failed&platform=facebook|instagram|threads&account_id=...&limit=50
 router.get('/', async (req, res) => {
   try {
-    const { status, limit = 50 } = req.query;
+    const { status, platform, account_id, limit = 50 } = req.query;
     let query = db.collection('posts').where('user_id', '==', req.user.id);
     
-    if (status) {
+    if (status && status !== 'all') {
       query = query.where('status', '==', status);
     }
     
     const snapshot = await query.get();
     let posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Filter by platform in memory if provided
+    if (platform && platform !== 'all') {
+      posts = posts.filter(post => 
+        post.targets && post.targets.some(t => t.platform === platform)
+      );
+    }
+
+    // Filter by account_id in memory if provided
+    if (account_id && account_id !== 'all') {
+      posts = posts.filter(post => 
+        post.targets && post.targets.some(t => t.account_id === account_id)
+      );
+    }
+
     posts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
     const parsedLimit = parseInt(limit, 10) || 50;
@@ -227,7 +242,7 @@ router.post('/:id/publish', async (req, res) => {
 // POST /api/posts/bulk-delete
 router.post('/bulk-delete', async (req, res) => {
   try {
-    const { ids, deleteAll, status } = req.body || {};
+    const { ids, deleteAll, status, platform, account_id } = req.body || {};
 
     if (deleteAll) {
       let query = db.collection('posts').where('user_id', '==', req.user.id);
@@ -239,11 +254,33 @@ router.post('/bulk-delete', async (req, res) => {
         return res.json({ success: true, count: 0, message: 'Tidak ada postingan untuk dihapus.' });
       }
 
+      let docsToDelete = snap.docs;
+
+      // Filter by platform in memory if provided
+      if (platform && platform !== 'all') {
+        docsToDelete = docsToDelete.filter(doc => {
+          const data = doc.data();
+          return data.targets && data.targets.some(t => t.platform === platform);
+        });
+      }
+
+      // Filter by account_id in memory if provided
+      if (account_id && account_id !== 'all') {
+        docsToDelete = docsToDelete.filter(doc => {
+          const data = doc.data();
+          return data.targets && data.targets.some(t => t.account_id === account_id);
+        });
+      }
+
+      if (docsToDelete.length === 0) {
+        return res.json({ success: true, count: 0, message: 'Tidak ada postingan untuk dihapus.' });
+      }
+
       const batches = [];
       let currentBatch = db.batch();
       let count = 0;
 
-      snap.docs.forEach((doc, idx) => {
+      docsToDelete.forEach((doc, idx) => {
         currentBatch.delete(doc.ref);
         count++;
         if ((idx + 1) % 450 === 0) {
