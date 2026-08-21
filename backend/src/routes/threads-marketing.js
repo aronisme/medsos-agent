@@ -69,100 +69,50 @@ router.get('/keywords', async (req, res) => {
 // POST /api/threads-marketing/keywords/auto-generate
 router.post('/keywords/auto-generate', async (req, res) => {
   try {
-    const productsSnap = await db.collection('affiliate_products')
-      .where('user_id', '==', req.user.id)
-      .get();
+    // 1. Ambil kategori dan kata kunci umum dari produk
+    const highTrafficKeywords = [
+      { keyword: 'rekomendasi outfit', category: 'fashion', priority: 1 },
+      { keyword: 'racun shopee', category: 'general', priority: 1 },
+      { keyword: 'spill link', category: 'general', priority: 1 },
+      { keyword: 'rekomendasi baju', category: 'fashion', priority: 1 },
+      { keyword: 'rekomendasi tas', category: 'fashion', priority: 1 },
+      { keyword: 'rekomendasi sepatu', category: 'fashion', priority: 1 },
+      { keyword: 'outfit kuliah', category: 'fashion', priority: 2 },
+      { keyword: 'shopee haul', category: 'general', priority: 2 },
+      { keyword: 'baju kondangan', category: 'fashion', priority: 2 },
+      { keyword: 'outfit murah', category: 'fashion', priority: 2 },
+      { keyword: 'rekomendasi kemeja', category: 'fashion', priority: 2 },
+      { keyword: 'spill toko shopee', category: 'general', priority: 2 },
+    ];
 
-    const existingKwSnap = await db.collection('threads_monitoring_keywords')
-      .where('user_id', '==', req.user.id)
-      .get();
-
-    const existingKeywords = new Set(existingKwSnap.docs.map(d => d.data().keyword?.toLowerCase()));
-    const generatedKeywords = [];
-
-    if (productsSnap.empty) {
-      // Default high-intent keywords if no products exist yet
-      const defaults = [
-        { keyword: 'racun shopee', category: 'general', priority: 1 },
-        { keyword: 'rekomendasi outfit', category: 'fashion', priority: 1 },
-        { keyword: 'spill link shopee', category: 'general', priority: 1 },
-        { keyword: 'rekomendasi baju murah', category: 'fashion', priority: 2 },
-      ];
-
-      for (const def of defaults) {
-        if (!existingKeywords.has(def.keyword)) {
-          const docRef = await db.collection('threads_monitoring_keywords').add({
-            user_id: req.user.id,
-            keyword: def.keyword,
-            category: def.category,
-            priority: def.priority,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            last_searched_at: null,
-          });
-          generatedKeywords.push({ id: docRef.id, ...def });
-        }
+    // Ekstrak token kategori spesifik dari produk pengguna jika ada
+    const categorySet = new Set();
+    productsSnap.docs.forEach(d => {
+      const cat = (d.data().category || '').toLowerCase().trim();
+      if (cat && cat !== 'general' && cat !== 'shopee affiliate') {
+        categorySet.add(cat);
       }
-    } else {
-      // Extract from active products
-      for (const doc of productsSnap.docs) {
-        const prod = doc.data();
-        const title = (prod.title || '').toLowerCase();
-        const cat = (prod.category || 'fashion').toLowerCase();
+    });
 
-        // 1. Ekstrak frasa judul 2-3 kata pertama
-        const cleanWords = title.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
-        if (cleanWords.length >= 2) {
-          const phrase1 = `rekomendasi ${cleanWords.slice(0, 2).join(' ')}`;
-          const phrase2 = `spill ${cleanWords.slice(0, 2).join(' ')}`;
-          
-          if (!existingKeywords.has(phrase1)) {
-            existingKeywords.add(phrase1);
-            const ref1 = await db.collection('threads_monitoring_keywords').add({
-              user_id: req.user.id,
-              keyword: phrase1,
-              category: cat,
-              priority: 1,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              last_searched_at: null,
-            });
-            generatedKeywords.push({ id: ref1.id, keyword: phrase1, category: cat, priority: 1 });
-          }
+    categorySet.forEach(cat => {
+      highTrafficKeywords.push({ keyword: `rekomendasi ${cat}`, category: cat, priority: 1 });
+      highTrafficKeywords.push({ keyword: `racun shopee ${cat}`, category: cat, priority: 2 });
+    });
 
-          if (!existingKeywords.has(phrase2)) {
-            existingKeywords.add(phrase2);
-            const ref2 = await db.collection('threads_monitoring_keywords').add({
-              user_id: req.user.id,
-              keyword: phrase2,
-              category: cat,
-              priority: 2,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              last_searched_at: null,
-            });
-            generatedKeywords.push({ id: ref2.id, keyword: phrase2, category: cat, priority: 2 });
-          }
-        }
-
-        // 2. Kategori keyword
-        const catPhrase = `racun shopee ${cat}`;
-        if (!existingKeywords.has(catPhrase)) {
-          existingKeywords.add(catPhrase);
-          const refCat = await db.collection('threads_monitoring_keywords').add({
-            user_id: req.user.id,
-            keyword: catPhrase,
-            category: cat,
-            priority: 2,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            last_searched_at: null,
-          });
-          generatedKeywords.push({ id: refCat.id, keyword: catPhrase, category: cat, priority: 2 });
-        }
-
-        // Batasi maksimal 15 kata kunci teratas agar kuota dan daftar tetap efisien & rapi
-        if (generatedKeywords.length >= 15) break;
+    // Simpan kata kunci unik
+    for (const item of highTrafficKeywords.slice(0, 15)) {
+      if (!existingKeywords.has(item.keyword)) {
+        existingKeywords.add(item.keyword);
+        const docRef = await db.collection('threads_monitoring_keywords').add({
+          user_id: req.user.id,
+          keyword: item.keyword,
+          category: item.category,
+          priority: item.priority,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          last_searched_at: null,
+        });
+        generatedKeywords.push({ id: docRef.id, ...item });
       }
     }
 
