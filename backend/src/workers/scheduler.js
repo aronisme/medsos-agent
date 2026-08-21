@@ -206,7 +206,6 @@ async function processScheduledPosts() {
 
     // Check 5: Outbound Social Listening Keyword Search (Persisten setiap 30 menit)
     const lastOutboundScan = Number(lockData.last_outbound_scan_epoch) || 0;
-    const thirtyMinutes = 30 * 60 * 1000;
     if (now - lastOutboundScan >= thirtyMinutes) {
       updateLocks.last_outbound_scan_epoch = now;
       setImmediate(async () => {
