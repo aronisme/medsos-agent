@@ -204,6 +204,34 @@ async function processScheduledPosts() {
       });
     }
 
+    // Check 5: Outbound Social Listening Keyword Search (Persisten setiap 30 menit)
+    const lastOutboundScan = Number(lockData.last_outbound_scan_epoch) || 0;
+    const thirtyMinutes = 30 * 60 * 1000;
+    if (now - lastOutboundScan >= thirtyMinutes) {
+      updateLocks.last_outbound_scan_epoch = now;
+      setImmediate(async () => {
+        try {
+          const accountsSnap = await db.collection('social_accounts')
+            .where('platform', '==', 'threads')
+            .where('is_active', 'in', [1, true, '1'])
+            .get();
+
+          const activeUserIds = new Set();
+          accountsSnap.forEach(d => {
+            const u = d.data().user_id;
+            if (u) activeUserIds.add(u);
+          });
+
+          const { runOutboundSocialListening } = require('../services/threads/outbound/outboundService');
+          for (const uid of activeUserIds) {
+            await runOutboundSocialListening(uid);
+          }
+        } catch (outboundErr) {
+          console.error('[scheduler] Error running background outbound social listening:', outboundErr.message);
+        }
+      });
+    }
+
     // Simpan timestamp lock terbaru jika ada background task yang dipicu
     if (Object.keys(updateLocks).length > 0) {
       await lockRef.set(updateLocks, { merge: true });
