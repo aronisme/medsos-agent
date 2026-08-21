@@ -1,11 +1,11 @@
-const { publishTextReply } = require('../api/threadsReplyApi');
+const { publishTextReply, publishQuotePost } = require('../api/threadsReplyApi');
 const { resolveAffiliateLink } = require('../products/affiliateLinkResolver');
 const { composeReply } = require('./replyComposer');
 const { acquireLock, markSuccess, releaseLock } = require('../safety/idempotencyService');
 const { incrementReplyUsage } = require('../safety/quotaService');
 
 /**
- * Dispatcher sentral untuk mempublikasikan balasan ke Threads
+ * Dispatcher sentral untuk mempublikasikan balasan atau Quote Post ke Threads
  * @param {Object} options 
  * @param {string} options.userId 
  * @param {string} options.accountId 
@@ -16,7 +16,8 @@ const { incrementReplyUsage } = require('../safety/quotaService');
  * @param {string} options.authorId 
  * @param {string} options.authorUsername 
  * @param {string} options.productId 
- * @param {'INBOUND'|'OUTBOUND'} [options.actionType='INBOUND'] 
+ * @param {'INBOUND'|'OUTBOUND'|'QUOTE'} [options.actionType='INBOUND'] 
+ * @param {'REPLY'|'QUOTE'} [options.publishMode='REPLY'] 
  * @param {'helpful'|'casual'|'direct'} [options.style='helpful'] 
  * @param {string} [options.customReplyText] 
  */
@@ -32,6 +33,7 @@ async function dispatchReply(options) {
     authorUsername,
     productId,
     actionType = 'INBOUND',
+    publishMode = 'REPLY',
     style = 'helpful',
     customReplyText = null,
   } = options;
@@ -39,7 +41,7 @@ async function dispatchReply(options) {
   // 1. Tentukan kunci idempotensi unik
   const idempotencyKey = actionType === 'INBOUND'
     ? `inbound_${accountId}_reply_${targetReplyId}`
-    : `outbound_${accountId}_thread_${threadId}`;
+    : `outbound_${accountId}_thread_${threadId}_${publishMode.toLowerCase()}`;
 
   // 2. Ambil Lock Atomik
   const lockAcquired = await acquireLock(idempotencyKey, {
@@ -51,6 +53,7 @@ async function dispatchReply(options) {
     author_username: String(authorUsername || ''),
     product_id: productId,
     action_type: actionType,
+    publish_mode: publishMode,
   });
 
   if (!lockAcquired) {
@@ -79,11 +82,19 @@ async function dispatchReply(options) {
       });
     }
 
-    // 5. Kirim balasan via Threads API
-    const publishRes = await publishTextReply(threadsUserId, token, {
-      replyToId: targetReplyId,
-      text: finalReplyText,
-    });
+    // 5. Kirim via Threads API (Reply atau Quote Post)
+    let publishRes;
+    if (publishMode === 'QUOTE' || actionType === 'QUOTE') {
+      publishRes = await publishQuotePost(threadsUserId, token, {
+        quotePostId: threadId || targetReplyId,
+        text: finalReplyText,
+      });
+    } else {
+      publishRes = await publishTextReply(threadsUserId, token, {
+        replyToId: targetReplyId,
+        text: finalReplyText,
+      });
+    }
 
     // 6. Catat sukses dan perbarui kuota
     await markSuccess(idempotencyKey, {

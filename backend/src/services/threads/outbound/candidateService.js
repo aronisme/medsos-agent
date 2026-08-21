@@ -111,9 +111,12 @@ async function listCandidates(userId, statusFilter = 'ALL') {
 }
 
 /**
- * Menyetujui kandidat dan mempublikasikan balasannya ke Threads
+ * Menyetujui kandidat dan mempublikasikan balasannya atau quote post ke Threads
  */
-async function approveCandidate(candidateId, userId, customReplyText = null) {
+async function approveCandidate(candidateId, userId, options = {}) {
+  const customReplyText = typeof options === 'string' ? options : (options.customReplyText || null);
+  const publishMode = (typeof options === 'object' && options.publishMode) ? options.publishMode : 'REPLY';
+
   const docRef = db.collection('threads_candidates').doc(candidateId);
   const doc = await docRef.get();
 
@@ -167,7 +170,8 @@ async function approveCandidate(candidateId, userId, customReplyText = null) {
       authorId: candidate.author_id,
       authorUsername: candidate.author_username,
       productId: candidate.matched_product_id,
-      actionType: 'OUTBOUND',
+      actionType: publishMode === 'QUOTE' ? 'QUOTE' : 'OUTBOUND',
+      publishMode,
       style: candidate.reply_template_style || 'helpful',
       customReplyText,
     });

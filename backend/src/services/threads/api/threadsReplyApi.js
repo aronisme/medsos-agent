@@ -81,6 +81,43 @@ async function publishTextReply(threadsUserId, token, { replyToId, text }) {
 }
 
 /**
+ * Membuat container postingan baru yang mengutip (Quote Post) postingan orang lain
+ * @param {string} threadsUserId - ID Pengguna Threads
+ * @param {string} token 
+ * @param {string} quotePostId - ID Postingan publik Threads yang ingin di-quote
+ * @param {string} text - Teks caption postingan kita
+ */
+async function createQuoteContainer(threadsUserId, token, quotePostId, text) {
+  const params = {
+    media_type: 'TEXT',
+    text: String(text).slice(0, 495),
+    quote_post_id: quotePostId,
+  };
+
+  const data = await post(`${threadsUserId}/threads`, token, null, params);
+  if (!data?.id) {
+    throw new Error(`Gagal membuat container Quote Post Threads: ${JSON.stringify(data)}`);
+  }
+  return data.id;
+}
+
+/**
+ * Abstraksi terpadu untuk mempublikasikan Quote Post ke Threads
+ * @param {string} threadsUserId 
+ * @param {string} token 
+ * @param {{ quotePostId: string, text: string }} options 
+ */
+async function publishQuotePost(threadsUserId, token, { quotePostId, text }) {
+  if (!quotePostId) throw new Error('quotePostId wajib diisi.');
+  if (!text) throw new Error('text postingan tidak boleh kosong.');
+
+  const cleanUserId = threadsUserId ? String(threadsUserId).trim() : 'me';
+  const creationId = await createQuoteContainer(cleanUserId, token, quotePostId, text);
+  const publishedId = await publishReplyContainer(cleanUserId, token, creationId);
+  return { success: true, publishedId, creationId };
+}
+
+/**
  * Menyembunyikan atau memunculkan kembali komentar (Reply Moderation)
  * @param {string} replyId - ID Balasan
  * @param {string} token 
@@ -97,5 +134,7 @@ module.exports = {
   createReplyContainer,
   publishReplyContainer,
   publishTextReply,
+  createQuoteContainer,
+  publishQuotePost,
   manageReply,
 };

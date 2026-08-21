@@ -61,12 +61,12 @@ export default function ThreadsAutoMarketing() {
     fetchData();
   }, [statusFilter]);
 
-  const handleApprove = async (candidateId) => {
+  const handleApprove = async (candidateId, publishMode = 'REPLY') => {
     setActionLoading(candidateId);
     setMessage(null);
     try {
-      const res = await api.post(`/threads-marketing/candidates/${candidateId}/approve`);
-      setMessage({ type: 'success', text: res.data.message || 'Balasan berhasil dipublikasikan ke Threads!' });
+      const res = await api.post(`/threads-marketing/candidates/${candidateId}/approve`, { publishMode });
+      setMessage({ type: 'success', text: res.data.message || 'Balasan/Quote Post berhasil dipublikasikan ke Threads!' });
       fetchData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || err.message });
@@ -326,24 +326,37 @@ export default function ThreadsAutoMarketing() {
                   </div>
 
                   {cand.status === 'PENDING' && (
-                    <div className="flex items-center gap-2 pt-3 border-t border-slate-800">
-                      <button
-                        onClick={() => handleApprove(cand.id)}
-                        disabled={actionLoading === cand.id}
-                        className="flex-1 py-2 rounded-xl gradient-btn text-xs font-bold flex items-center justify-center gap-1.5 shadow-md"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{actionLoading === cand.id ? 'Mengirim...' : 'Setujui & Balas'}</span>
-                      </button>
+                    <div className="flex flex-col gap-2 pt-3 border-t border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleApprove(cand.id, 'REPLY')}
+                          disabled={actionLoading === cand.id}
+                          className="flex-1 py-2 rounded-xl gradient-btn text-xs font-bold flex items-center justify-center gap-1.5 shadow-md"
+                          title="Balas langsung di kolom komentar postingan orang tersebut"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{actionLoading === cand.id ? 'Mengirim...' : 'Balas Utas'}</span>
+                        </button>
 
-                      <button
-                        onClick={() => handleReject(cand.id)}
-                        disabled={actionLoading === cand.id}
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 text-xs font-semibold"
-                        title="Tolak Kandidat"
-                      >
-                        <XCircle className="w-4 h-4" />
-                      </button>
+                        <button
+                          onClick={() => handleApprove(cand.id, 'QUOTE')}
+                          disabled={actionLoading === cand.id}
+                          className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all"
+                          title="Buat postingan baru di profil kita yang mengutip (Quote) postingan orang tersebut"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>{actionLoading === cand.id ? 'Mengirim...' : 'Kutip (Quote)'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleReject(cand.id)}
+                          disabled={actionLoading === cand.id}
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 text-xs font-semibold"
+                          title="Tolak Kandidat"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

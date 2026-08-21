@@ -26,9 +26,13 @@ router.get('/candidates', async (req, res) => {
 // POST /api/threads-marketing/candidates/:id/approve
 router.post('/candidates/:id/approve', async (req, res) => {
   try {
-    const { customReplyText } = req.body || {};
-    const result = await approveCandidate(req.params.id, req.user.id, customReplyText);
-    res.json({ success: true, message: 'Balasan berhasil dipublikasikan ke Threads!', ...result });
+    const { customReplyText, publishMode = 'REPLY' } = req.body || {};
+    const result = await approveCandidate(req.params.id, req.user.id, { customReplyText, publishMode });
+    res.json({
+      success: true,
+      message: publishMode === 'QUOTE' ? 'Quote Post berhasil dipublikasikan ke Threads!' : 'Balasan berhasil dipublikasikan ke Threads!',
+      ...result,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
