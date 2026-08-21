@@ -13,6 +13,7 @@ import {
   RefreshCw,
   X,
   AtSign,
+  Send,
 } from 'lucide-react';
 
 export default function AccountManager() {
@@ -69,6 +70,10 @@ export default function AccountManager() {
   const handleAddAccount = async (e) => {
     e.preventDefault();
     if (!pageName || !pageId) return;
+    if (platform === 'telegram' && !accessToken) {
+      alert('Bot Token wajib diisi untuk platform Telegram.');
+      return;
+    }
     setSubmitting(true);
     setMessage(null);
 
@@ -174,6 +179,7 @@ export default function AccountManager() {
             const isFb = acc.platform === 'facebook';
             const isIg = acc.platform === 'instagram';
             const isThreads = acc.platform === 'threads';
+            const isTg = acc.platform === 'telegram';
             
             let bgClass = 'bg-slate-800 shadow-lg';
             let IconComponent = Share2;
@@ -186,6 +192,9 @@ export default function AccountManager() {
             } else if (isThreads) {
               bgClass = 'bg-black border border-slate-700 shadow-lg shadow-slate-500/20';
               IconComponent = AtSign;
+            } else if (isTg) {
+              bgClass = 'bg-sky-500 shadow-lg shadow-sky-500/20';
+              IconComponent = Send;
             }
             
             return (
@@ -217,7 +226,9 @@ export default function AccountManager() {
                   <p className="text-xs text-slate-400 mt-0.5">
                     Platform: <span className="uppercase font-semibold text-slate-300">{acc.platform}</span>
                   </p>
-                  <p className="text-[11px] text-slate-500 font-mono mt-1">ID: {acc.page_id}</p>
+                  <p className="text-[11px] text-slate-500 font-mono mt-1">
+                    {isTg ? 'Chat ID: ' : 'ID: '}{acc.page_id}
+                  </p>
 
                   {acc.ig_account_id && (
                     <p className="text-[11px] text-ig-pink font-mono mt-1">
@@ -262,13 +273,13 @@ export default function AccountManager() {
             <form onSubmit={handleAddAccount} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Platform</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setPlatform('facebook')}
-                    className={`py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 ${
+                    className={`py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
                       platform === 'facebook'
-                        ? 'bg-fb-blue text-white border-blue-500'
+                        ? 'bg-fb-blue text-white border-blue-500 shadow-lg shadow-blue-500/20'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
@@ -277,9 +288,9 @@ export default function AccountManager() {
                   <button
                     type="button"
                     onClick={() => setPlatform('instagram')}
-                    className={`py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 ${
+                    className={`py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
                       platform === 'instagram'
-                        ? 'bg-gradient-to-tr from-ig-orange via-ig-pink to-ig-purple text-white border-pink-500'
+                        ? 'bg-gradient-to-tr from-ig-orange via-ig-pink to-ig-purple text-white border-pink-500 shadow-lg shadow-pink-500/20'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
@@ -288,39 +299,62 @@ export default function AccountManager() {
                   <button
                     type="button"
                     onClick={() => setPlatform('threads')}
-                    className={`py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 ${
+                    className={`py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
                       platform === 'threads'
-                        ? 'bg-black text-white border-slate-700 shadow-lg shadow-slate-500/20'
+                        ? 'bg-black text-white border-slate-700 shadow-lg shadow-slate-500/10'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
                     <AtSign className="w-4 h-4" /> Threads
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlatform('telegram')}
+                    className={`py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                      platform === 'telegram'
+                        ? 'bg-sky-500 text-white border-sky-400 shadow-lg shadow-sky-500/20'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    <Send className="w-4 h-4" /> Telegram Bot
+                  </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Nama Halaman / Akun *</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  {platform === 'telegram' ? 'Nama Bot Telegram *' : 'Nama Halaman / Akun *'}
+                </label>
                 <input
                   type="text"
                   required
                   value={pageName}
                   onChange={(e) => setPageName(e.target.value)}
-                  placeholder="Contoh: Toko Online Resmi"
+                  placeholder={platform === 'telegram' ? 'Contoh: @MedsosReportBot' : 'Contoh: Toko Online Resmi'}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  {platform === 'threads' ? 'Threads User ID *' : 'FB Page / IG Business ID *'}
+                  {platform === 'threads' 
+                    ? 'Threads User ID *' 
+                    : platform === 'telegram' 
+                    ? 'Telegram Chat ID / Channel ID *' 
+                    : 'FB Page / IG Business ID *'}
                 </label>
                 <input
                   type="text"
                   required
                   value={pageId}
                   onChange={(e) => setPageId(e.target.value)}
-                  placeholder={platform === 'threads' ? 'Contoh: 123456789' : 'Contoh: 10982347120938'}
+                  placeholder={
+                    platform === 'threads' 
+                      ? 'Contoh: 123456789' 
+                      : platform === 'telegram' 
+                      ? 'Contoh: -10023456789' 
+                      : 'Contoh: 10982347120938'
+                  }
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -340,12 +374,15 @@ export default function AccountManager() {
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Page Access Token</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  {platform === 'telegram' ? 'Bot Access Token *' : 'Page Access Token'}
+                </label>
                 <textarea
                   rows={2}
+                  required={platform === 'telegram'}
                   value={accessToken}
                   onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder="EAAxxx... (opsional untuk mode Dry-Run)"
+                  placeholder={platform === 'telegram' ? 'Contoh: 123456:ABC-DEF...' : 'EAAxxx... (opsional untuk mode Dry-Run)'}
                   className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
                 />
               </div>

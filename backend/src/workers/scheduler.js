@@ -14,6 +14,36 @@ async function processScheduledPosts() {
   try {
     const now = Date.now();
 
+    // 0. CHECK FOR DAILY PERFORMANCE REPORT (08:00 WIB)
+    try {
+      const jakartaTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
+      const jakartaDate = new Date(jakartaTime);
+      const currentHour = jakartaDate.getHours();
+      
+      if (currentHour >= 8) {
+        // Find active users
+        const accountsSnap = await db.collection('social_accounts')
+          .where('is_active', 'in', [1, true, '1'])
+          .get();
+
+        const activeUserIds = new Set();
+        accountsSnap.forEach(d => {
+          const u = d.data().user_id;
+          if (u) activeUserIds.add(u);
+        });
+
+        const { sendDailyPerformanceReport } = require('../services/telegramService');
+        for (const uid of activeUserIds) {
+          // sendDailyPerformanceReport internally throttles to once per day using locks
+          await sendDailyPerformanceReport(uid).catch(err => {
+            console.error(`[scheduler] Failed to send daily Telegram report for user ${uid}:`, err.message);
+          });
+        }
+      }
+    } catch (reportErr) {
+      console.error('[scheduler] Daily Telegram performance report check error:', reportErr.message);
+    }
+
     // 1. FAST-PATH (Dijalankan setiap menit): Publish postingan yang jatuh tempo
     // Menggunakan limit(10) untuk menghemat kuota Firestore reads
     const snapshot = await db.collection('posts')

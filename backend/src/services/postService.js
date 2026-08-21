@@ -128,6 +128,37 @@ async function publishPostNow(postId) {
     }
     await docRef.update(updateData);
 
+    // Send Telegram Notification Report
+    try {
+      const successTargets = targets.filter(t => t.status === 'success');
+      const failedTargets = targets.filter(t => t.status === 'failed');
+      
+      let reportMessage = `<b>📢 MEDSOS AGENT - STATUS PUBLIKASI</b>\n\n`;
+      reportMessage += `<b>Post ID:</b> <code>#${postId.slice(0, 7)}</code>\n`;
+      if (post.title) {
+        reportMessage += `<b>Judul:</b> ${post.title}\n`;
+      }
+      reportMessage += `<b>Status:</b> ${newStatus === 'posted' ? '✅ Berhasil Dipublish' : '❌ Gagal Dipublish'}\n\n`;
+      
+      if (successTargets.length > 0) {
+        reportMessage += `<b>✅ Sukses:</b>\n`;
+        successTargets.forEach(t => {
+          reportMessage += `- ${t.page_name} (Platform: ${t.platform.toUpperCase()})\n`;
+        });
+      }
+      if (failedTargets.length > 0) {
+        reportMessage += `\n<b>❌ Gagal:</b>\n`;
+        failedTargets.forEach(t => {
+          reportMessage += `- ${t.page_name} (Platform: ${t.platform.toUpperCase()}): <i>${t.error_message || 'Error tidak diketahui'}</i>\n`;
+        });
+      }
+
+      const { sendTelegramReport } = require('./telegramService');
+      sendTelegramReport(post.user_id, reportMessage).catch(console.error);
+    } catch (tgErr) {
+      console.warn('[publishPostNow] Failed to send Telegram report:', tgErr.message);
+    }
+
     // Closed-Loop: Update post status & platform post ID di product_post_memory
     try {
       const memRef = db.collection('product_post_memory').doc(`mem_${postId}`);

@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios');
 const { db } = require('../config/firebase');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
@@ -34,8 +35,8 @@ router.get('/', async (req, res) => {
 // POST /api/accounts – manual add (upsert)
 router.post('/', async (req, res) => {
   const { platform, page_id, page_name, access_token } = req.body || {};
-  if (!['facebook', 'instagram', 'threads'].includes(platform)) {
-    return res.status(400).json({ error: 'platform harus facebook, instagram, atau threads.' });
+  if (!['facebook', 'instagram', 'threads', 'telegram'].includes(platform)) {
+    return res.status(400).json({ error: 'platform harus facebook, instagram, threads, atau telegram.' });
   }
   if (!page_id) return res.status(400).json({ error: 'page_id wajib diisi.' });
 
@@ -60,6 +61,21 @@ router.post('/', async (req, res) => {
         updateData.access_token = access_token;
       }
       await existingDoc.ref.update(updateData);
+
+      // Register Telegram Webhook if platform is Telegram
+      if (platform === 'telegram' && access_token) {
+        const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
+        if (baseUrl && !baseUrl.includes('localhost')) {
+          const webhookUrl = `${baseUrl}/api/telegram/webhook/${access_token}`;
+          try {
+            await axios.post(`https://api.telegram.org/bot${access_token}/setWebhook`, { url: webhookUrl });
+            console.log(`[Telegram Webhook] Webhook set successfully to: ${webhookUrl}`);
+          } catch (webhookErr) {
+            console.error('[Telegram Webhook] Failed to set webhook:', webhookErr.message);
+          }
+        }
+      }
+
       const data = { ...existingDoc.data(), ...updateData };
       const { access_token: _at, ...rest } = data;
       return res.json({ account: { id: existingDoc.id, ...rest, has_token: Boolean(data.access_token) } });
@@ -75,7 +91,21 @@ router.post('/', async (req, res) => {
       created_at: new Date().toISOString()
     };
     const docRef = await db.collection('social_accounts').add(newAccount);
-    
+
+    // Register Telegram Webhook if platform is Telegram
+    if (platform === 'telegram' && access_token) {
+      const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
+      if (baseUrl && !baseUrl.includes('localhost')) {
+        const webhookUrl = `${baseUrl}/api/telegram/webhook/${access_token}`;
+        try {
+          await axios.post(`https://api.telegram.org/bot${access_token}/setWebhook`, { url: webhookUrl });
+          console.log(`[Telegram Webhook] Webhook set successfully to: ${webhookUrl}`);
+        } catch (webhookErr) {
+          console.error('[Telegram Webhook] Failed to set webhook:', webhookErr.message);
+        }
+      }
+    }
+
     const { access_token: _at, ...rest } = newAccount;
     res.status(201).json({ account: { id: docRef.id, ...rest, has_token: Boolean(access_token) } });
   } catch (err) {
@@ -103,6 +133,20 @@ router.put('/:id', async (req, res) => {
     };
     
     await docRef.update(updateData);
+
+    // Register/update Telegram Webhook if platform is Telegram and access token changed
+    if (account.platform === 'telegram' && access_token && access_token !== account.access_token) {
+      const baseUrl = (process.env.PUBLIC_URL || process.env.BASE_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app');
+      if (baseUrl && !baseUrl.includes('localhost')) {
+        const webhookUrl = `${baseUrl}/api/telegram/webhook/${access_token}`;
+        try {
+          await axios.post(`https://api.telegram.org/bot${access_token}/setWebhook`, { url: webhookUrl });
+          console.log(`[Telegram Webhook] Webhook updated successfully to: ${webhookUrl}`);
+        } catch (webhookErr) {
+          console.error('[Telegram Webhook] Failed to update webhook:', webhookErr.message);
+        }
+      }
+    }
     
     const { access_token: _at, ...rest } = { ...account, ...updateData };
     res.json({ account: { id: doc.id, ...rest, has_token: Boolean(updateData.access_token) } });

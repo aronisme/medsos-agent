@@ -612,6 +612,24 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       }
     }
 
+    if (createdPosts.length > 0) {
+      try {
+        let reportMessage = `<b>🤖 AGEN AI AUTOPILOT CYCLE</b>\n\n`;
+        reportMessage += `Siklus otonom selesai. Telah dijadwalkan <b>${createdPosts.length} postingan baru</b>:\n\n`;
+        createdPosts.forEach(p => {
+          reportMessage += `• <b>${p.accountName} (${p.platform.toUpperCase()})</b>\n`;
+          reportMessage += `  Produk: ${p.productTitle}\n`;
+          const timeStr = new Date(p.scheduledAt).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+          reportMessage += `  Jadwal: ${timeStr} WIB\n\n`;
+        });
+
+        const { sendTelegramReport } = require('../telegramService');
+        sendTelegramReport(userId, reportMessage).catch(console.error);
+      } catch (tgErr) {
+        console.warn('[runAutonomousCycle] Failed to send Telegram report:', tgErr.message);
+      }
+    }
+
     return {
       success: true,
       generated_posts: createdPosts.length,
