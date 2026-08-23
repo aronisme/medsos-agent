@@ -8,12 +8,13 @@ import {
   CheckCircle2,
   AlertTriangle,
   Trash2,
-  Link,
   ShieldCheck,
   RefreshCw,
   X,
   AtSign,
   Send,
+  Bot,
+  Power,
 } from 'lucide-react';
 
 export default function AccountManager() {
@@ -27,6 +28,7 @@ export default function AccountManager() {
   const [igAccountId, setIgAccountId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
 
   const [refreshingTokens, setRefreshingTokens] = useState(false);
 
@@ -101,11 +103,20 @@ export default function AccountManager() {
   };
 
   const handleToggleActive = async (id, currentStatus) => {
+    const nextStatus = currentStatus ? 0 : 1;
+    setTogglingId(id);
+    
+    // Optimistic UI state update
+    setAccounts(prev => prev.map(a => a.id === id ? { ...a, is_active: nextStatus } : a));
+
     try {
-      await api.put(`/accounts/${id}`, { is_active: currentStatus ? 0 : 1 });
-      fetchAccounts();
+      await api.put(`/accounts/${id}`, { is_active: nextStatus });
     } catch (err) {
-      alert('Gagal memperbarui status akun.');
+      // Revert if API call fails
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, is_active: currentStatus } : a));
+      alert('Gagal memperbarui status aktivasi akun.');
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -119,6 +130,10 @@ export default function AccountManager() {
     }
   };
 
+  const activeAccountsCount = accounts.filter(
+    a => a.is_active === 1 || a.is_active === true || a.is_active === '1'
+  ).length;
+
   return (
     <div className="space-y-6 text-left">
       {/* Header */}
@@ -128,7 +143,9 @@ export default function AccountManager() {
             <Share2 className="w-5 h-5 text-indigo-400" />
             <span>Manajemen Akun Sosial Media</span>
           </h2>
-          <p className="text-xs text-slate-400">Hubungkan Facebook Page, Instagram Bisnis, dan Akun Threads Anda</p>
+          <p className="text-xs text-slate-400">
+            Hubungkan & kelola aktivasi akun untuk postingan otomatis <span className="text-indigo-300 font-semibold">AI Agent Autopilot</span>
+          </p>
         </div>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto">
@@ -152,6 +169,32 @@ export default function AccountManager() {
         </div>
       </div>
 
+      {/* Summary Info Banner */}
+      {!loading && accounts.length > 0 && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-slate-900/60 to-slate-900/40 border border-indigo-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
+          <div className="flex items-center gap-3 text-slate-300">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center shrink-0">
+              <Bot className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <div className="font-semibold text-white flex items-center gap-2">
+                <span>Status Integrasi Agen AI:</span>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                  activeAccountsCount > 0 
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                }`}>
+                  {activeAccountsCount > 0 ? `${activeAccountsCount} Akun Aktif` : 'Tidak Ada Akun Aktif'}
+                </span>
+              </div>
+              <p className="text-slate-400 mt-0.5">
+                Hanya akun dengan tombol <span className="text-emerald-400 font-semibold">Togel Aktif (ON)</span> yang akan digunakan Agen untuk membuat jadwal postingan affiliate Shopee otomatis.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {message && (
         <div
           className={`p-4 rounded-2xl border text-sm font-medium flex items-center gap-3 ${
@@ -174,12 +217,14 @@ export default function AccountManager() {
           <p className="text-sm font-semibold text-slate-400">Belum ada akun sosial media yang terhubung.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {accounts.map((acc) => {
             const isFb = acc.platform === 'facebook';
             const isIg = acc.platform === 'instagram';
             const isThreads = acc.platform === 'threads';
             const isTg = acc.platform === 'telegram';
+            const isActive = Boolean(acc.is_active === 1 || acc.is_active === true || acc.is_active === '1');
+            const isCurrentlyToggling = togglingId === acc.id;
             
             let bgClass = 'bg-slate-800 shadow-lg';
             let IconComponent = Share2;
@@ -200,51 +245,103 @@ export default function AccountManager() {
             return (
               <div
                 key={acc.id}
-                className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between"
+                className={`bg-slate-900/70 border rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between transition-all duration-300 relative overflow-hidden ${
+                  isActive 
+                    ? 'border-indigo-500/40 shadow-xl shadow-indigo-500/5 ring-1 ring-indigo-500/20' 
+                    : 'border-slate-800/80 opacity-75 hover:opacity-100'
+                }`}
               >
+                {/* Active glow gradient bar at top */}
+                {isActive && (
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-indigo-500 to-sky-500" />
+                )}
+
                 <div>
+                  {/* Top Row: Icon + Activation Toggle Switch */}
                   <div className="flex items-center justify-between mb-4">
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-bold ${bgClass}`}
+                      className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold ${bgClass}`}
                     >
                       <IconComponent className="w-5 h-5" />
                     </div>
 
-                    <button
-                      onClick={() => handleToggleActive(acc.id, acc.is_active)}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                        acc.is_active
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-400 border-slate-700'
-                      }`}
-                    >
-                      {acc.is_active ? 'Aktif' : 'Nonaktif'}
-                    </button>
+                    {/* Modern Interactive Toggle Switch */}
+                    <div className="flex items-center gap-2.5 bg-slate-950/80 border border-slate-800/90 rounded-2xl px-3 py-1.5 shadow-inner">
+                      <div className="flex flex-col items-end">
+                        <span className={`text-[10px] font-extrabold tracking-wider uppercase flex items-center gap-1 ${
+                          isActive ? 'text-emerald-400' : 'text-slate-500'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                          {isActive ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                        <span className="text-[9px] text-slate-500 font-medium">Agen AI</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(acc.id, isActive)}
+                        disabled={isCurrentlyToggling}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                          isActive ? 'bg-emerald-500 shadow-lg shadow-emerald-500/30' : 'bg-slate-700'
+                        } ${isCurrentlyToggling ? 'opacity-50' : ''}`}
+                        title={isActive ? 'Klik untuk menonaktifkan akun ini dari postingan Agen AI' : 'Klik untuk mengaktifkan akun ini untuk postingan Agen AI'}
+                      >
+                        <span className="sr-only">Toggle Aktivasi Agen AI</span>
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            isActive ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
-                  <h3 className="font-bold text-base text-white">{acc.page_name}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Platform: <span className="uppercase font-semibold text-slate-300">{acc.platform}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-mono mt-1">
-                    {isTg ? 'Chat ID: ' : 'ID: '}{acc.page_id}
+                  <h3 className="font-bold text-base text-white tracking-tight">{acc.page_name}</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-slate-400">Platform:</span>
+                    <span className="text-[11px] uppercase font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700/50">
+                      {acc.platform}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 font-mono mt-2 break-all">
+                    {isTg ? 'Chat ID: ' : 'ID Akun: '}{acc.page_id}
                   </p>
 
                   {acc.ig_account_id && (
-                    <p className="text-[11px] text-ig-pink font-mono mt-1">
+                    <p className="text-[11px] text-ig-pink font-mono mt-1 break-all">
                       IG Business ID: {acc.ig_account_id}
                     </p>
                   )}
+
+                  {/* Agent Status Badge Banner */}
+                  <div className={`mt-4 p-2.5 rounded-xl border text-[11px] flex items-center gap-2 transition-all ${
+                    isActive
+                      ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                      : 'bg-slate-800/40 border-slate-800 text-slate-500'
+                  }`}>
+                    {isActive ? (
+                      <>
+                        <Bot className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span className="font-medium">Digunakan Agen AI untuk posting konten affiliate</span>
+                      </>
+                    ) : (
+                      <>
+                        <Power className="w-4 h-4 text-slate-500 shrink-0" />
+                        <span className="font-medium">Diabaikan Agen AI (Tidak akan diposting otomatis)</span>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between">
+                <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
                   <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400" /> Token Valid
+                    <ShieldCheck className="w-3 h-3 text-emerald-400" /> Token Terhubung
                   </span>
 
                   <button
                     onClick={() => handleDelete(acc.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition-colors"
+                    className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-800/80 transition-colors"
                     title="Hapus Akun"
                   >
                     <Trash2 className="w-4 h-4" />
