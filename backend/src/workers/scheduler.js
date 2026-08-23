@@ -77,8 +77,9 @@ async function processScheduledPosts() {
     }
 
     // 2. PERSISTENT SERVERLESS RATE-LIMITING LOCK
-    // Pada serverless (Vercel), variabel in-memory akan ter-reset di setiap cold start (1 menit sekali).
-    // Menggunakan dokumen Firestore 'scheduler_locks' agar throttling 15m / 30m / 12h benar-benar persisten!
+    // Pada serverless (Vercel) & Google Apps Script (GAS), pemanggilan asynchronous harus di-await
+    // agar proses tidak terbunuh sebelum selesai.
+    // Menggunakan dokumen Firestore 'scheduler_locks' agar throttling 10m / 15m / 30m / 12h benar-benar persisten.
     const lockRef = db.collection('system_state').doc('scheduler_locks');
     let lockData = {};
     try {
@@ -93,142 +94,116 @@ async function processScheduledPosts() {
     const lastAnalyticsSync = Number(lockData.last_analytics_sync_epoch) || 0;
     const lastAutonomousCycle = Number(lockData.last_autonomous_cycle_epoch) || 0;
     const lastTokenRefresh = Number(lockData.last_token_refresh_epoch) || 0;
+    const lastInboundScan = Number(lockData.last_inbound_scan_epoch) || 0;
+    const lastOutboundScan = Number(lockData.last_outbound_scan_epoch) || 0;
 
     const thirtyMinutes = 30 * 60 * 1000;
     const fifteenMinutes = 15 * 60 * 1000;
+    const tenMinutes = 10 * 60 * 1000;
     const twelveHours = 12 * 60 * 60 * 1000;
 
     const updateLocks = {};
 
+    // Helper: Ambil seluruh active user IDs dari social_accounts
+    const accountsSnap = await db.collection('social_accounts')
+      .where('is_active', 'in', [1, true, '1'])
+      .get();
+
+    const activeUserIds = new Set();
+    const activeThreadsUserIds = new Set();
+    accountsSnap.forEach(d => {
+      const data = d.data();
+      if (data.user_id) {
+        activeUserIds.add(data.user_id);
+        if (data.platform === 'threads') {
+          activeThreadsUserIds.add(data.user_id);
+        }
+      }
+    });
+
     // Check 1: Auto-Sync Analitik Meta & Link (Persisten setiap 30 menit)
     if (now - lastAnalyticsSync >= thirtyMinutes) {
       updateLocks.last_analytics_sync_epoch = now;
-      setImmediate(async () => {
+      for (const uid of activeUserIds) {
         try {
-          const accountsSnap = await db.collection('social_accounts')
-            .where('is_active', 'in', [1, true, '1'])
-            .get();
-
-          const activeUserIds = new Set();
-          accountsSnap.forEach(d => {
-            const u = d.data().user_id;
-            if (u) activeUserIds.add(u);
-          });
-
-          for (const uid of activeUserIds) {
-            console.log(`[scheduler] Menjalankan Auto-Sync Analitik Meta & Link untuk User: ${uid}`);
-            await syncAllPostsAnalytics(uid, { limit: 15 });
-          }
-
-          // Evaluasi eksperimen A/B yang sedang berjalan
-          const expSnap = await db.collection('experiments')
-            .where('status', '==', 'running')
-            .limit(10)
-            .get();
-
-          for (const expDoc of expSnap.docs) {
-            await evaluateExperiment(expDoc.id);
-          }
+          console.log(`[scheduler] Menjalankan Auto-Sync Analitik Meta & Link untuk User: ${uid}`);
+          await syncAllPostsAnalytics(uid, { limit: 15 });
         } catch (syncErr) {
-          console.error('[scheduler] Error running background analytics sync:', syncErr.message);
+          console.error(`[scheduler] Error analytics sync user ${uid}:`, syncErr.message);
         }
-      });
+      }
+
+      // Evaluasi eksperimen A/B yang sedang berjalan
+      try {
+        const expSnap = await db.collection('experiments')
+          .where('status', '==', 'running')
+          .limit(10)
+          .get();
+
+        for (const expDoc of expSnap.docs) {
+          await evaluateExperiment(expDoc.id);
+        }
+      } catch (expErr) {
+        console.error('[scheduler] Error evaluating experiments:', expErr.message);
+      }
     }
 
     // Check 2: Autonomous Cycle (Persisten setiap 15 menit)
     if (now - lastAutonomousCycle >= fifteenMinutes) {
       updateLocks.last_autonomous_cycle_epoch = now;
-      setImmediate(async () => {
+      for (const uid of activeUserIds) {
         try {
-          const accountsSnap = await db.collection('social_accounts')
-            .where('is_active', 'in', [1, true, '1'])
-            .get();
-
-          const activeUserIds = new Set();
-          accountsSnap.forEach(d => {
-            const u = d.data().user_id;
-            if (u) activeUserIds.add(u);
-          });
-
-          for (const uid of activeUserIds) {
-            const cfg = await getAgentConfig(uid);
-            if (cfg.autopilot_enabled) {
-              console.log(`[scheduler] Menjalankan Autonomous Cycle untuk User: ${uid}`);
-              await runAutonomousCycle(uid, { forceRun: false });
-            }
+          const cfg = await getAgentConfig(uid);
+          if (cfg.autopilot_enabled) {
+            console.log(`[scheduler] Menjalankan Autonomous Cycle untuk User: ${uid}`);
+            const cycleRes = await runAutonomousCycle(uid, { forceRun: false });
+            results.push({ type: 'autonomous_cycle', userId: uid, cycleRes });
           }
         } catch (autoErr) {
-          console.error('[scheduler] Error running background autonomous cycle:', autoErr.message);
+          console.error(`[scheduler] Error autonomous cycle user ${uid}:`, autoErr.message);
         }
-      });
+      }
     }
 
     // Check 3: Token Auto-Refresh (Persisten setiap 12 jam)
     if (now - lastTokenRefresh >= twelveHours) {
       updateLocks.last_token_refresh_epoch = now;
-      setImmediate(async () => {
-        try {
-          console.log('[scheduler] Menjalankan rutin Auto-Refresh Token (FB, IG, Threads)...');
-          await autoRefreshAllTokens();
-        } catch (tokErr) {
-          console.error('[scheduler] Error auto-refreshing social tokens:', tokErr.message);
-        }
-      });
+      try {
+        console.log('[scheduler] Menjalankan rutin Auto-Refresh Token (FB, IG, Threads)...');
+        await autoRefreshAllTokens();
+      } catch (tokErr) {
+        console.error('[scheduler] Error auto-refreshing social tokens:', tokErr.message);
+      }
     }
 
     // Check 4: Inbound Threads Auto-Reply Polling (Persisten setiap 10 menit)
-    const lastInboundScan = Number(lockData.last_inbound_scan_epoch) || 0;
-    const tenMinutes = 10 * 60 * 1000;
     if (now - lastInboundScan >= tenMinutes) {
       updateLocks.last_inbound_scan_epoch = now;
-      setImmediate(async () => {
+      const { scanAndProcessInboundReplies } = require('../services/threads/inbound/inboundService');
+      for (const uid of activeThreadsUserIds) {
         try {
-          const accountsSnap = await db.collection('social_accounts')
-            .where('platform', '==', 'threads')
-            .where('is_active', 'in', [1, true, '1'])
-            .get();
-
-          const activeUserIds = new Set();
-          accountsSnap.forEach(d => {
-            const u = d.data().user_id;
-            if (u) activeUserIds.add(u);
-          });
-
-          const { scanAndProcessInboundReplies } = require('../services/threads/inbound/inboundService');
-          for (const uid of activeUserIds) {
-            await scanAndProcessInboundReplies(uid);
-          }
+          console.log(`[scheduler] Menjalankan Inbound Threads Auto-Reply Scan untuk User: ${uid}`);
+          const inRes = await scanAndProcessInboundReplies(uid);
+          results.push({ type: 'threads_inbound_scan', userId: uid, ...inRes });
         } catch (inboundErr) {
-          console.error('[scheduler] Error running background inbound threads scan:', inboundErr.message);
+          console.error(`[scheduler] Error inbound threads scan user ${uid}:`, inboundErr.message);
         }
-      });
+      }
     }
 
     // Check 5: Outbound Social Listening Keyword Search (Persisten setiap 30 menit)
-    const lastOutboundScan = Number(lockData.last_outbound_scan_epoch) || 0;
     if (now - lastOutboundScan >= thirtyMinutes) {
       updateLocks.last_outbound_scan_epoch = now;
-      setImmediate(async () => {
+      const { runOutboundSocialListening } = require('../services/threads/outbound/outboundService');
+      for (const uid of activeThreadsUserIds) {
         try {
-          const accountsSnap = await db.collection('social_accounts')
-            .where('platform', '==', 'threads')
-            .where('is_active', 'in', [1, true, '1'])
-            .get();
-
-          const activeUserIds = new Set();
-          accountsSnap.forEach(d => {
-            const u = d.data().user_id;
-            if (u) activeUserIds.add(u);
-          });
-
-          const { runOutboundSocialListening } = require('../services/threads/outbound/outboundService');
-          for (const uid of activeUserIds) {
-            await runOutboundSocialListening(uid);
-          }
+          console.log(`[scheduler] Menjalankan Outbound Threads Social Listening untuk User: ${uid}`);
+          const outRes = await runOutboundSocialListening(uid);
+          results.push({ type: 'threads_outbound_search', userId: uid, ...outRes });
         } catch (outboundErr) {
-          console.error('[scheduler] Error running background outbound social listening:', outboundErr.message);
+          console.error(`[scheduler] Error outbound social listening user ${uid}:`, outboundErr.message);
         }
-      });
+      }
     }
 
     // Simpan timestamp lock terbaru jika ada background task yang dipicu

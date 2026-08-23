@@ -2,20 +2,35 @@ const axios = require('axios');
 const env = require('../../../config/env');
 
 const LINK_REQUEST_PATTERNS = [
-  /spill\s*(link|toko|produk|min|kak|dong)?/i,
-  /minta\s*link/i,
-  /bagi\s*link/i,
-  /beli\s*di\s*mana/i,
-  /dimana\s*beli/i,
-  /link\s*(nya|shopee|dong|kak|min|plis|please)/i,
-  /tumpah\s*link/i,
-  /mau\s*(dong|kak|link|ini)/i,
-  /info\s*(toko|produk|olshop|olshopnya|link)/i,
-  /harga\s*berapa/i,
+  /spill/i,
+  /link\s*(?:dong|kak|min|plis|pls|nya|shopee|mana|beli|order)?/i,
+  /(?:minta|bagi|kasih|share|dm|pm|inbox)\s*(?:link|toko|olshop|info|shopee|produk)/i,
+  /(?:beli|order|pesan|checkout|dapet|dpt|co|belinya)\s*(?:di\s*mana|dimana|dmana|lewat\s*mana|dmn)/i,
+  /(?:ada\s+)?link(?:nya)?/i,
+  /mau\s+(?:dong|kak|min|link|ini|beli|order|co)/i,
+  /info\s*(?:toko|produk|olshop|olshopnya|link|penjual|shopee)/i,
+  /nama\s*(?:toko|olshop|produk|barangnya|store|brand|shopee)/i,
+  /(?:harga|harganya|hrg)\s*(?:berapa|brp|berapaan)/i,
   /berapaan/i,
-  /ada\s*link/i,
-  /pesen\s*dimana/i,
-  /order\s*dimana/i,
+  /belinya\s+dimana/i,
+  /belinya\s+dmn/i,
+  /beli\s+dimana/i,
+  /beli\s+dmn/i,
+  /cek\s+link/i,
+  /linknya\s+mana/i,
+  /shopee\s+link/i,
+  /tumpah\s*link/i,
+  /racun\s*(?:shopee|link|dong)/i,
+];
+
+const PRODUCT_QUESTION_PATTERNS = [
+  /(?:bahan|bahannya|material)\s*(?:apa|gimana|adem)/i,
+  /(?:ukuran|size|ld|panjang)\s*(?:berapa|apa|ada)/i,
+  /(?:warna|color|varian)\s*(?:apa\s*aja|ada\s*apa)/i,
+  /(?:muat|cukup)\s*(?:bb|berat\s*badan|tb)/i,
+  /(?:bisa|support)\s*cod/i,
+  /(?:ready|ada)\s*(?:stok|stock|ga|nggak|gak)/i,
+  /ori\s*(?:ga|nggak|gak|bukan)/i,
 ];
 
 const NEGATIVE_PATTERNS = [
@@ -27,6 +42,8 @@ const NEGATIVE_PATTERNS = [
   /sampah/i,
   /hoax/i,
   /bohong/i,
+  /kecewa/i,
+  /palsu/i,
 ];
 
 /**
@@ -51,7 +68,7 @@ async function classifyCommentIntent(text = '') {
     }
   }
 
-  // 2. Fast-Path Pattern Matcher
+  // 2. Fast-Path Pattern Matcher: Link Request
   for (const pattern of LINK_REQUEST_PATTERNS) {
     if (pattern.test(clean)) {
       return {
@@ -62,7 +79,18 @@ async function classifyCommentIntent(text = '') {
     }
   }
 
-  // 3. LLM Fallback (jika apiKey tersedia)
+  // 3. Fast-Path Pattern Matcher: Product Detail Question
+  for (const pattern of PRODUCT_QUESTION_PATTERNS) {
+    if (pattern.test(clean)) {
+      return {
+        intent: 'PRODUCT_QUESTION',
+        confidence: 0.92,
+        reasoning: `Cocok dengan pertanyaan spesifikasi produk: ${pattern.toString()}`,
+      };
+    }
+  }
+
+  // 4. LLM Fallback (jika apiKey tersedia)
   if (env.mistralApiKey) {
     try {
       const prompt = `Klasifikasikan komentar media sosial berikut ke dalam salah satu kategori:
@@ -98,19 +126,20 @@ Jawab HANYA dalam format JSON valid:
         };
       }
     } catch (_) {
-      // Abaikan error LLM dan lanjutkan ke fallback
+      // Ignore LLM error and fallback
     }
   }
 
-  // 4. Default Fallback
   return {
-    intent: 'GENERAL_APPRECIATION',
-    confidence: 0.60,
-    reasoning: 'Komentar umum tanpa indikasi langsung permintaan link.',
+    intent: 'IRRELEVANT',
+    confidence: 0.70,
+    reasoning: 'Komentar tidak mengandung kata kunci permintaan link atau pertanyaan produk.',
   };
 }
 
 module.exports = {
   classifyCommentIntent,
   LINK_REQUEST_PATTERNS,
+  PRODUCT_QUESTION_PATTERNS,
+  NEGATIVE_PATTERNS,
 };
