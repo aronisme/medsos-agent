@@ -22,8 +22,18 @@ async function scanAndProcessInboundReplies(userId) {
       return summary;
     }
 
-    for (const accDoc of accountsSnap.docs) {
-      const account = { id: accDoc.id, ...accDoc.data() };
+    const threadsAccounts = accountsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Himpun seluruh username/handle akun milik pengguna untuk menghindari membalas akun internal sendiri
+    const ownedUsernames = new Set();
+    threadsAccounts.forEach(acc => {
+      if (acc.page_name) ownedUsernames.add(acc.page_name.toLowerCase().trim());
+      if (acc.username) ownedUsernames.add(acc.username.toLowerCase().trim());
+      if (acc.name) ownedUsernames.add(acc.name.toLowerCase().trim());
+      if (acc.page_id) ownedUsernames.add(String(acc.page_id).trim());
+    });
+
+    for (const account of threadsAccounts) {
       const token = account.access_token;
       if (!token) continue;
 
@@ -45,6 +55,7 @@ async function scanAndProcessInboundReplies(userId) {
                 threadId: thread.id,
                 account,
                 userId,
+                ownedUsernames,
               });
 
               if (res?.processed && res?.success) {

@@ -1,6 +1,17 @@
 const axios = require('axios');
 const env = require('../../../config/env');
 
+const PRICE_INQUIRY_PATTERNS = [
+  /spill\s*(?:harga|hrg|budget|nominal|pricelist|pl)/i,
+  /(?:harga|harganya|hrg|price)\s*(?:berapa|brp|berapaan|nya\s*berapa)/i,
+  /berapaan(?:\s*kak|\s*min|\s*ya)?/i,
+  /(?:berapa|brp)\s*(?:harganya|hargany|hrg)/i,
+  /kira\s*kira\s*(?:harga|berapa|brp)/i,
+  /bisa\s*spill\s*harga/i,
+  /ada\s*harga\s*berapa/i,
+  /kisaran\s*harga/i,
+];
+
 const LINK_REQUEST_PATTERNS = [
   /spill/i,
   /link\s*(?:dong|kak|min|plis|pls|nya|shopee|mana|beli|order)?/i,
@@ -10,8 +21,6 @@ const LINK_REQUEST_PATTERNS = [
   /mau\s+(?:dong|kak|min|link|ini|beli|order|co)/i,
   /info\s*(?:toko|produk|olshop|olshopnya|link|penjual|shopee)/i,
   /nama\s*(?:toko|olshop|produk|barangnya|store|brand|shopee)/i,
-  /(?:harga|harganya|hrg)\s*(?:berapa|brp|berapaan)/i,
-  /berapaan/i,
   /belinya\s+dimana/i,
   /belinya\s+dmn/i,
   /beli\s+dimana/i,
@@ -49,7 +58,7 @@ const NEGATIVE_PATTERNS = [
 /**
  * Mengklasifikasi intensi komentar penonton Threads
  * @param {string} text - Teks komentar
- * @returns {Promise<{ intent: 'LINK_REQUEST'|'PRODUCT_QUESTION'|'GENERAL_APPRECIATION'|'NEGATIVE'|'IRRELEVANT', confidence: number, reasoning: string }>}
+ * @returns {Promise<{ intent: 'LINK_REQUEST'|'PRICE_INQUIRY'|'PRODUCT_QUESTION'|'GENERAL_APPRECIATION'|'NEGATIVE'|'IRRELEVANT', confidence: number, reasoning: string }>}
  */
 async function classifyCommentIntent(text = '') {
   const clean = String(text || '').trim();
@@ -68,7 +77,18 @@ async function classifyCommentIntent(text = '') {
     }
   }
 
-  // 2. Fast-Path Pattern Matcher: Link Request
+  // 2. Fast-Path Pattern Matcher: Price Inquiry (Lebih spesifik dibanding general link request)
+  for (const pattern of PRICE_INQUIRY_PATTERNS) {
+    if (pattern.test(clean)) {
+      return {
+        intent: 'PRICE_INQUIRY',
+        confidence: 0.98,
+        reasoning: `Cocok dengan pola pertanyaan harga produk: ${pattern.toString()}`,
+      };
+    }
+  }
+
+  // 3. Fast-Path Pattern Matcher: Link Request
   for (const pattern of LINK_REQUEST_PATTERNS) {
     if (pattern.test(clean)) {
       return {
@@ -79,7 +99,7 @@ async function classifyCommentIntent(text = '') {
     }
   }
 
-  // 3. Fast-Path Pattern Matcher: Product Detail Question
+  // 4. Fast-Path Pattern Matcher: Product Detail Question
   for (const pattern of PRODUCT_QUESTION_PATTERNS) {
     if (pattern.test(clean)) {
       return {

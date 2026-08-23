@@ -1,3 +1,4 @@
+const { db } = require('../../../config/firebase');
 const { publishTextReply, publishQuotePost } = require('../api/threadsReplyApi');
 const { resolveAffiliateLink } = require('../products/affiliateLinkResolver');
 const { composeReply } = require('./replyComposer');
@@ -16,6 +17,9 @@ const { incrementReplyUsage } = require('../safety/quotaService');
  * @param {string} options.authorId 
  * @param {string} options.authorUsername 
  * @param {string} options.productId 
+ * @param {string} [options.productTitle]
+ * @param {number|string} [options.price]
+ * @param {string} [options.intent='LINK_REQUEST']
  * @param {'INBOUND'|'OUTBOUND'|'QUOTE'} [options.actionType='INBOUND'] 
  * @param {'REPLY'|'QUOTE'} [options.publishMode='REPLY'] 
  * @param {'helpful'|'casual'|'direct'} [options.style='helpful'] 
@@ -32,6 +36,9 @@ async function dispatchReply(options) {
     authorId,
     authorUsername,
     productId,
+    productTitle = '',
+    price = 0,
+    intent = 'LINK_REQUEST',
     actionType = 'INBOUND',
     publishMode = 'REPLY',
     style = 'helpful',
@@ -68,6 +75,20 @@ async function dispatchReply(options) {
     // 3. Resolusi live link afiliasi deterministik
     const affiliateUrl = await resolveAffiliateLink(productId, userId);
 
+    // Ambil metadata produk jika belum lengkap
+    let finalTitle = productTitle;
+    let finalPrice = price;
+    if ((!finalTitle || !finalPrice) && productId) {
+      try {
+        const prodSnap = await db.collection('affiliate_products').doc(productId).get();
+        if (prodSnap.exists) {
+          const prodData = prodSnap.data();
+          finalTitle = finalTitle || prodData.title || '';
+          finalPrice = finalPrice || prodData.price || 0;
+        }
+      } catch (_) {}
+    }
+
     // 4. Susun teks balasan akhir
     let finalReplyText;
     if (customReplyText) {
@@ -78,7 +99,10 @@ async function dispatchReply(options) {
       finalReplyText = composeReply({
         style,
         affiliateUrl,
+        productTitle: finalTitle,
+        price: finalPrice,
         authorUsername,
+        intent,
       });
     }
 

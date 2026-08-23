@@ -27,30 +27,48 @@ async function resolveThreadProductContext(threadId, account, userId) {
       
       if (linkMatch && linkMatch[1]) {
         const shortCode = linkMatch[1];
-        // Cari di short_links collection
-        const slSnap = await db.collection('short_links')
-          .where('short_code', '==', shortCode)
-          .limit(1)
-          .get();
+        let slData = null;
 
-        if (!slSnap.empty) {
-          const slData = slSnap.docs[0].data();
-          if (slData.product_id) {
-            // Auto-cache context untuk pemanggilan berikutnya
-            await ctxRef.set({
-              id: `ctx_${threadId}`,
-              account_id: account.id,
-              thread_id: String(threadId),
-              user_id: userId,
-              product_id: slData.product_id,
-              caption: text,
-              published_at: threadInfo.timestamp || new Date().toISOString(),
-              status: 'ACTIVE',
-            }, { merge: true });
-
-            console.log(`[InboundEngine] 🔗 Context auto-resolved via shortlink #${shortCode} -> Product: ${slData.product_id}`);
-            return slData.product_id;
+        // 1. Cek langsung Document ID di collection short_links
+        const directDoc = await db.collection('short_links').doc(shortCode).get();
+        if (directDoc.exists) {
+          slData = directDoc.data();
+        } else {
+          // 2. Cek field code
+          const qSnap = await db.collection('short_links')
+            .where('code', '==', shortCode)
+            .limit(1)
+            .get();
+          if (!qSnap.empty) {
+            slData = qSnap.docs[0].data();
+          } else {
+            // 3. Cek field short_code
+            const altSnap = await db.collection('short_links')
+              .where('short_code', '==', shortCode)
+              .limit(1)
+              .get();
+            if (!altSnap.empty) {
+              slData = altSnap.docs[0].data();
+            }
           }
+        }
+
+        if (slData && slData.product_id) {
+          // Auto-cache context untuk pemanggilan berikutnya
+          await ctxRef.set({
+            id: `ctx_${threadId}`,
+            account_id: account.id,
+            thread_id: String(threadId),
+            user_id: userId,
+            product_id: slData.product_id,
+            shortlink_code: shortCode,
+            caption: text,
+            published_at: threadInfo.timestamp || new Date().toISOString(),
+            status: 'ACTIVE',
+          }, { merge: true });
+
+          console.log(`[InboundEngine] 🔗 Context auto-resolved via shortlink #${shortCode} -> Product: ${slData.product_id}`);
+          return slData.product_id;
         }
       }
 
@@ -94,15 +112,19 @@ async function resolveThreadProductContext(threadId, account, userId) {
  * @param {string} params.threadId - ID Utas utama
  * @param {Object} params.account - Data akun sosial media dari DB
  * @param {string} params.userId - ID User pemilik akun
+ * @param {Set<string>} [params.ownedUsernames] - Himpunan semua username milik user
  */
-async function processSingleInboundReply({ reply, threadId, account, userId }) {
-  // 1. Lewati jika komentar berasal dari akun kita sendiri
+async function processSingleInboundReply({ reply, threadId, account, userId, ownedUsernames = new Set() }) {
+  // 1. Lewati jika komentar berasal dari akun kita sendiri (semua akun internal)
   const authorUser = String(reply.username || '').toLowerCase().trim();
   const pageName = String(account.page_name || '').toLowerCase().trim();
   const username = String(account.username || '').toLowerCase().trim();
 
-  if (authorUser && (authorUser === pageName || authorUser === username)) {
-    return { processed: false, reason: 'Komentar sendiri diabaikan.' };
+  if (
+    (authorUser && (authorUser === pageName || authorUser === username)) ||
+    (authorUser && ownedUsernames instanceof Set && ownedUsernames.has(authorUser))
+  ) {
+    return { processed: false, reason: `Komentar dari akun sendiri (@${authorUser}) diabaikan.` };
   }
 
   // 2. Ambil konteks produk dengan multi-tier fallback
@@ -116,12 +138,13 @@ async function processSingleInboundReply({ reply, threadId, account, userId }) {
   const intentResult = await classifyCommentIntent(reply.text);
   console.log(`[InboundEngine] Komentar "${reply.text?.slice(0, 30)}..." -> Intent: ${intentResult.intent} (${intentResult.confidence})`);
 
-  // Hanya proses jika berniat meminta link atau bertanya produk
-  if (intentResult.intent !== 'LINK_REQUEST' && intentResult.intent !== 'PRODUCT_QUESTION') {
+  // Hanya proses jika berniat meminta link, tanya harga, atau bertanya detail produk
+  const allowedIntents = ['LINK_REQUEST', 'PRICE_INQUIRY', 'PRODUCT_QUESTION'];
+  if (!allowedIntents.includes(intentResult.intent)) {
     return {
       processed: false,
       intent: intentResult.intent,
-      reason: `Intensi bukan permintaan link (${intentResult.intent}).`,
+      reason: `Intensi bukan permintaan link atau info produk (${intentResult.intent}).`,
     };
   }
 
@@ -153,6 +176,7 @@ async function processSingleInboundReply({ reply, threadId, account, userId }) {
       authorId: reply.id,
       authorUsername: reply.username || '',
       productId,
+      intent: intentResult.intent,
       actionType: 'INBOUND',
       style: 'helpful',
     });

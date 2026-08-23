@@ -25,11 +25,34 @@ Keluarkan output HANYA dalam format JSON valid tanpa teks pengantar:
 }`;
 
 /**
- * Sanitasi teks caption untuk menghapus semua karakter markdown asterisks (*, **)
+ * Menghapus duplikasi hashtag yang identik
+ */
+function deduplicateHashtags(text = '') {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const seenGlobal = new Set();
+  const processedLines = lines.map(line => {
+    if (line.includes('#')) {
+      return line.replace(/#([a-zA-Z0-9_]+)/g, (match, tag) => {
+        const lower = tag.toLowerCase();
+        if (seenGlobal.has(lower)) {
+          return '';
+        }
+        seenGlobal.add(lower);
+        return match;
+      }).replace(/[ \t]{2,}/g, ' ').trim();
+    }
+    return line;
+  });
+  return processedLines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * Sanitasi teks caption untuk menghapus markdown asterisks (*, **) dan deduplikasi hashtag
  */
 function cleanCaptionText(text = '') {
   if (!text) return '';
-  return String(text)
+  const cleaned = String(text)
     // Hapus markdown bold/italic: **teks** -> teks, *teks* -> teks
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
@@ -37,6 +60,8 @@ function cleanCaptionText(text = '') {
     .replace(/_(.*?)_/g, '$1')
     .replace(/^#+\s+/gm, '') // Hapus # heading markdown
     .trim();
+
+  return deduplicateHashtags(cleaned);
 }
 
 

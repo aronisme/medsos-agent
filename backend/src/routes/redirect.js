@@ -167,10 +167,24 @@ router.get('/:code', async (req, res) => {
     }
 
     const data = docSnap.data() || {};
-    const destination = data.destination_url || data.product_url;
+    let destination = data.destination_url || data.product_url || data.target_url || data.url || data.link;
+
+    if (!destination && data.product_id) {
+      try {
+        const prodSnap = await db.collection('affiliate_products').doc(data.product_id).get();
+        if (prodSnap.exists) {
+          const p = prodSnap.data();
+          destination = p.product_url || p.affiliate_link || p.link;
+        }
+      } catch (_) {}
+    }
 
     if (!destination) {
-      return res.status(404).send('Link tujuan tidak valid.');
+      return res.status(404).send('<!DOCTYPE html><html><head><title>Link Tidak Valid</title></head><body style="font-family:sans-serif;text-align:center;padding:50px;"><h2>Link tujuan tidak valid atau produk sudah tidak tersedia.</h2></body></html>');
+    }
+
+    if (!destination.startsWith('http://') && !destination.startsWith('https://')) {
+      destination = `https://${destination}`;
     }
 
     const userAgent = req.get('User-Agent') || '';
