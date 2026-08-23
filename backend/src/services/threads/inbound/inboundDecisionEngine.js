@@ -115,16 +115,23 @@ async function resolveThreadProductContext(threadId, account, userId) {
  * @param {Set<string>} [params.ownedUsernames] - Himpunan semua username milik user
  */
 async function processSingleInboundReply({ reply, threadId, account, userId, ownedUsernames = new Set() }) {
-  // 1. Lewati jika komentar berasal dari akun kita sendiri (semua akun internal)
+  // 1. Pemeriksaan Akun Sendiri (dengan Pengecualian Akun Testing imveeveena)
   const authorUser = String(reply.username || '').toLowerCase().trim();
   const pageName = String(account.page_name || '').toLowerCase().trim();
   const username = String(account.username || '').toLowerCase().trim();
 
-  if (
-    (authorUser && (authorUser === pageName || authorUser === username)) ||
-    (authorUser && ownedUsernames instanceof Set && ownedUsernames.has(authorUser))
-  ) {
-    return { processed: false, reason: `Komentar dari akun sendiri (@${authorUser}) diabaikan.` };
+  const isSelfAccountScan = authorUser && (authorUser === pageName || authorUser === username);
+  const isSisterAccount = authorUser && ownedUsernames instanceof Set && ownedUsernames.has(authorUser);
+  const isWhitelistedTestingAccount = authorUser === 'imveeveena';
+
+  // Jika akun berkomentar di postingan miliknya sendiri yang sama persis
+  if (isSelfAccountScan) {
+    return { processed: false, reason: `Komentar akun sendiri pada postingan sendiri (@${authorUser}) diabaikan.` };
+  }
+
+  // Jika akun internal lain dan BUKAN akun testing yang di-whitelist
+  if (isSisterAccount && !isWhitelistedTestingAccount) {
+    return { processed: false, reason: `Komentar dari akun internal sister (@${authorUser}) diabaikan.` };
   }
 
   // 2. Ambil konteks produk dengan multi-tier fallback

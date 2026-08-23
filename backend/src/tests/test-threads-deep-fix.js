@@ -73,22 +73,35 @@ https://shopee-link-aff.vercel.app/s/r_f123
     failed++;
   }
 
-  // TEST 4: Multi-Account Exclusion
-  console.log('--- TEST 4: Multi-Account Exclusion ---');
-  const ownedUsernames = new Set(['imveeveena', 'ladynetaa', 'kana_netaaa', 'zilla_hida']);
-  const selfReplyResult = await processSingleInboundReply({
+  // TEST 4: Multi-Account Exclusion & Whitelist
+  console.log('--- TEST 4: Multi-Account Exclusion & Whitelist ---');
+  const ownedUsernames = new Set(['imveeveena', 'ladynetaa', 'kana_netaaa', 'zilla_hida', 'cleodeneta']);
+  
+  // Case A: imveeveena on ladynetaa (Whitelisted for testing)
+  const imveeveenaResult = await processSingleInboundReply({
     reply: { id: 'rep_123', username: 'imveeveena', text: 'cantik banget, spill harga' },
     threadId: 'th_456',
     account: { id: 'acc_lady', page_name: 'ladynetaa', username: 'ladynetaa', access_token: 'fake_token' },
     userId: 'user_1',
     ownedUsernames,
   });
-  console.log('Result for self-account comment:', selfReplyResult);
-  if (!selfReplyResult.processed && selfReplyResult.reason.includes('akun sendiri')) {
-    console.log('✅ TEST 4 PASSED: Sister account @imveeveena comment on @ladynetaa was successfully ignored.\n');
+  console.log('Case A (imveeveena on ladynetaa):', imveeveenaResult);
+
+  // Case B: cleodeneta on ladynetaa (Non-whitelisted sister account -> Should be ignored)
+  const cleoResult = await processSingleInboundReply({
+    reply: { id: 'rep_456', username: 'cleodeneta', text: 'cantik banget, spill harga' },
+    threadId: 'th_456',
+    account: { id: 'acc_lady', page_name: 'ladynetaa', username: 'ladynetaa', access_token: 'fake_token' },
+    userId: 'user_1',
+    ownedUsernames,
+  });
+  console.log('Case B (cleodeneta on ladynetaa):', cleoResult);
+
+  if (cleoResult.reason?.includes('internal sister') && (imveeveenaResult.reason || '').includes('Tidak ditemukan data context produk')) {
+    console.log('✅ TEST 4 PASSED: @imveeveena passed account filter for testing, while @cleodeneta was properly blocked.\n');
     passed++;
   } else {
-    console.error('❌ TEST 4 FAILED: Sister account comment was NOT ignored.\n');
+    console.error('❌ TEST 4 FAILED: Whitelist filter behavior did not match expectations.\n');
     failed++;
   }
 
