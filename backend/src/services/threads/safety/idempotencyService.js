@@ -12,7 +12,18 @@ async function acquireLock(idempotencyKey, metadata = {}) {
     const doc = await docRef.get();
     
     if (doc.exists) {
-      return false; // Sudah pernah diproses / lock sudah diambil
+      const data = doc.data() || {};
+      if (data.status === 'SENT') {
+        return false; // Sudah sukses terkirim, jangan kirim duplikat
+      }
+      if (data.status === 'PROCESSING') {
+        // Jika sedang processing lebih dari 2 menit (stale lock), izinkan retry
+        const createdAt = new Date(data.created_at || 0).getTime();
+        if (Date.now() - createdAt < 120000) {
+          return false;
+        }
+      }
+      // Jika statusnya FAILED atau stale PROCESSING, izinkan retry
     }
 
     await docRef.set({
@@ -21,7 +32,7 @@ async function acquireLock(idempotencyKey, metadata = {}) {
       status: 'PROCESSING',
       created_at: new Date().toISOString(),
       ...metadata,
-    });
+    }, { merge: true });
 
     return true;
   } catch (err) {

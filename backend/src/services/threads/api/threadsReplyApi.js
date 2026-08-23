@@ -49,19 +49,71 @@ async function createReplyContainer(threadsUserId, token, replyToId, text) {
   return data.id;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * Memublikasikan container reply yang sudah dibuat
+ * Memastikan container media/reply sudah siap sebelum dipublish
+ */
+async function waitForContainerReady(creationId, token, maxWaitMs = 12000) {
+  const start = Date.now();
+  // Berikan jeda inisial minimum 2000ms agar server Meta menyelesaikan replikasi container
+  await sleep(2000);
+
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const res = await get(creationId, token, { fields: 'status,error_message' });
+      if (res?.status === 'FINISHED') return true;
+      if (res?.status === 'ERROR') {
+        throw new Error(`Threads media container error: ${res.error_message || 'Unknown error'}`);
+      }
+      if (res?.status === 'IN_PROGRESS') {
+        await sleep(1500);
+        continue;
+      }
+      // Jika field status tidak tersedia (beberapa text container mengembalikan id saja), anggap siap
+      return true;
+    } catch (err) {
+      if (err.message.includes('4279009') || err.message.includes('does not exist')) {
+        await sleep(1500);
+        continue;
+      }
+      await sleep(1500);
+    }
+  }
+  return true;
+}
+
+/**
+ * Memublikasikan container reply yang sudah dibuat dengan auto-retry
  * @param {string} threadsUserId 
  * @param {string} token 
  * @param {string} creationId 
  */
 async function publishReplyContainer(threadsUserId, token, creationId) {
+  await waitForContainerReady(creationId, token);
+
   const params = { creation_id: creationId };
-  const data = await post(`${threadsUserId}/threads_publish`, token, null, params);
-  if (!data?.id) {
-    throw new Error(`Gagal mempublish reply Threads: ${JSON.stringify(data)}`);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const data = await post(`${threadsUserId}/threads_publish`, token, null, params);
+      if (data?.id) {
+        return data.id;
+      }
+      throw new Error(`Gagal mempublish reply Threads: ${JSON.stringify(data)}`);
+    } catch (err) {
+      lastError = err;
+      if (err.message.includes('4279009') || err.message.includes('does not exist')) {
+        console.warn(`[ThreadsReplyApi] Percobaan publish #${attempt} belum siap (Meta 4279009). Menunggu 2.5s sebelum retry...`);
+        await sleep(2500);
+        continue;
+      }
+      throw err;
+    }
   }
-  return data.id;
+
+  throw lastError;
 }
 
 /**
