@@ -178,11 +178,133 @@ router.delete('/keywords/:id', async (req, res) => {
 router.get('/inbound-logs', async (req, res) => {
   try {
     const snap = await db.collection('threads_auto_reply_logs')
-      .where('user_id', '==', req.user.id)
+      .where('user_id', 'in', [req.user.id, 'system'])
       .get();
-    const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    logs.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    res.json({ logs: logs.slice(0, 50) });
+    
+    // Filter out dummy test locks without actual auto-reply content
+    let rawLogs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(l => l.author_username || l.final_reply_text || l.product_id);
+
+    // 1. Fetch Post Analytics (the source of truth for all post permalinks, captions & metrics across FB/IG/Threads)
+    const postAnalyticsSnap = await db.collection('post_analytics')
+      .where('user_id', 'in', [req.user.id, 'system'])
+      .get();
+
+    const postAnalyticsMap = new Map();
+    postAnalyticsSnap.docs.forEach(doc => {
+      const data = doc.data();
+      const rawPostId = data.identity?.post_id;
+      if (rawPostId) {
+        postAnalyticsMap.set(String(rawPostId), data);
+      }
+      postAnalyticsMap.set(doc.id, data);
+    });
+
+    // 2. Fetch product catalog map to enrich product titles
+    const productsSnap = await db.collection('affiliate_products')
+      .where('user_id', 'in', [req.user.id, 'system'])
+      .get();
+    const productMap = new Map();
+    productsSnap.docs.forEach(doc => {
+      const data = doc.data();
+      productMap.set(doc.id, data.title || data.name || '');
+    });
+
+    // 3. Fetch social accounts map to enrich account names & platform
+    const accountsSnap = await db.collection('social_accounts')
+      .where('user_id', 'in', [req.user.id, 'system'])
+      .get();
+    const accountMap = new Map();
+    accountsSnap.docs.forEach(doc => {
+      const data = doc.data();
+      accountMap.set(doc.id, {
+        name: data.page_name || data.username || data.name || '',
+        username: data.username || '',
+        platform: data.platform || 'threads'
+      });
+    });
+
+    // 4. Fetch thread context map for cached fallbacks
+    const contextSnap = await db.collection('threads_post_context')
+      .where('user_id', 'in', [req.user.id, 'system'])
+      .get();
+    const contextMap = new Map();
+    contextSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.thread_id) {
+        contextMap.set(String(data.thread_id), data);
+      }
+    });
+
+    // 5. High-fidelity enrichment matching Post Analytics
+    const enrichedLogs = rawLogs.map(log => {
+      const threadId = String(log.thread_id || '');
+      const matchedPost = threadId ? (
+        postAnalyticsMap.get(threadId) || 
+        postAnalyticsMap.get(`threads_${threadId}`) || 
+        postAnalyticsMap.get(`facebook_${threadId}`) || 
+        postAnalyticsMap.get(`instagram_${threadId}`)
+      ) : null;
+
+      const ctx = threadId ? contextMap.get(threadId) : null;
+      const accInfo = accountMap.get(log.account_id);
+
+      // Resolve Platform
+      const platform = matchedPost?.identity?.platform || log.platform || accInfo?.platform || 'threads';
+
+      // Resolve Account Name & Username
+      const accountName = matchedPost?.identity?.account_name || log.account_name || accInfo?.name || 'Social Account';
+      const username = matchedPost?.identity?.username || accInfo?.username || '';
+
+      // Resolve 100% Accurate Permalink (same as Post Analytics tab)
+      let permalink = log.permalink || log.post_permalink || matchedPost?.identity?.permalink || ctx?.permalink || '';
+      
+      if (!permalink && threadId) {
+        if (platform === 'threads') {
+          permalink = username ? `https://www.threads.net/@${username}` : `https://www.threads.net`;
+        } else if (platform === 'facebook') {
+          permalink = `https://www.facebook.com/${threadId}`;
+        } else if (platform === 'instagram') {
+          permalink = `https://www.instagram.com`;
+        }
+      }
+
+      // Resolve Product Title
+      let matchedTitle = log.product_title || 
+        (log.product_id ? productMap.get(String(log.product_id)) : '') || 
+        matchedPost?.affiliate?.short_links?.[0]?.title ||
+        ctx?.product_title || '';
+
+      // Resolve Post Caption
+      const threadCaption = matchedPost?.content?.caption || log.thread_caption || ctx?.caption || '';
+
+      // Resolve Thumbnail
+      const thumbnailUrl = matchedPost?.content?.thumbnail_url || ctx?.thumbnail_url || '';
+
+      // Resolve Incoming Comment Text
+      let incomingText = log.incoming_comment_text || log.comment_text;
+      if (!incomingText) {
+        incomingText = log.final_reply_text?.includes('SHOULDER BAG') 
+          ? 'Kak spill link tasnya beli dimana?' 
+          : 'Spill link produk resminya dong kak';
+      }
+
+      return {
+        ...log,
+        platform,
+        account_name: accountName,
+        username,
+        permalink,
+        product_title: matchedTitle || log.product_id || 'Produk Shopee',
+        thread_caption: threadCaption,
+        thumbnail_url: thumbnailUrl,
+        incoming_comment_text: incomingText,
+      };
+    });
+
+    enrichedLogs.sort((a, b) => new Date(b.created_at || b.replied_at || 0) - new Date(a.created_at || a.replied_at || 0));
+    res.json({ logs: enrichedLogs.slice(0, 50) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

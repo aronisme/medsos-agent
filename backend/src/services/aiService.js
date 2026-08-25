@@ -1,5 +1,4 @@
-const axios = require('axios');
-const env = require('../config/env');
+const { callUnifiedAI } = require('./agent/aiQueueService');
 
 const SYSTEM_PROMPT = `Kamu adalah asisten konten media sosial (social media content assistant).
 Buat caption postingan yang menarik, profesional, dan sesuai tone yang diminta.
@@ -7,7 +6,7 @@ Gunakan bahasa Indonesia kecuali diminta lain. Sertakan emoji secukupnya dan has
 Jangan menambahkan teks pengantar, langsung berikan caption saja.`;
 
 /**
- * Generate caption menggunakan Mistral AI
+ * Generate caption menggunakan Unified AI (Groq Primary + Mistral Fallback)
  * @param {{topic: string, tone?: string, platform?: string, length?: 'short'|'medium'|'long'}} opts
  */
 async function generateCaption({ topic, tone = 'casual', platform = 'facebook', length = 'medium' }) {
@@ -19,23 +18,15 @@ async function generateCaption({ topic, tone = 'casual', platform = 'facebook', 
     `Panjang: ${lengthMap[length] || lengthMap.medium}`,
   ].join('\n');
 
-  const response = await axios.post(
-    'https://api.mistral.ai/v1/chat/completions',
-    {
-      model: env.mistralModel,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-      max_tokens: 300,
-      temperature: 0.8,
-    },
-    { headers: { Authorization: `Bearer ${env.mistralApiKey}` } }
-  );
+  const caption = await callUnifiedAI({
+    systemPrompt: SYSTEM_PROMPT,
+    userPrompt: prompt,
+    temperature: 0.8,
+    maxTokens: 350
+  });
 
-  const caption = response.data?.choices?.[0]?.message?.content?.trim();
-  if (!caption) throw new Error('Mistral tidak mengembalikan caption.');
-  return caption;
+  if (!caption) throw new Error('AI tidak mengembalikan caption.');
+  return caption.trim();
 }
 
 module.exports = { generateCaption };

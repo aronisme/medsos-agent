@@ -1,7 +1,7 @@
 const app = require('./app');
 const env = require('./config/env');
 
-if (process.env.NODE_ENV !== 'production') {
+if (require.main === module || !process.env.VERCEL) {
   app.listen(env.port, () => {
     console.log(`🚀 Backend jalan di http://localhost:${env.port} (dry-run: ${env.dryRun})`);
     if (!env.dryRun && (!env.fbAppId || !env.fbAppSecret)) {

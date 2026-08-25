@@ -1,5 +1,5 @@
 const { db } = require('../../config/firebase');
-const { callMistralAI } = require('./aiQueueService');
+const { callUnifiedAI } = require('./aiQueueService');
 const { logAgentDecision } = require('./decisionLogger');
 
 const PROFILING_SYSTEM_PROMPT = `Kamu adalah Senior Product Intelligence Analyst untuk Social Media Affiliate Marketing.
@@ -43,11 +43,12 @@ async function profileShopeeProduct(product, userId = 'system') {
       `Varian: ${(product.variants || []).map(v => v.name).join(', ') || 'Standard'}`
     ].join('\n');
 
-    const rawResponse = await callMistralAI({
+    const rawResponse = await callUnifiedAI({
       systemPrompt: PROFILING_SYSTEM_PROMPT,
       userPrompt,
       temperature: 0.3,
-      jsonMode: true
+      jsonMode: true,
+      maxTokens: 500
     });
 
     let parsed = null;

@@ -398,45 +398,171 @@ export default function ThreadsAutoMarketing() {
       {/* SUB-TAB 2: INBOUND LOGS */}
       {activeSubTab === 'inbound' && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5">
-          <h3 className="font-bold text-sm text-white mb-3 flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-emerald-400" />
-            <span>Riwayat Auto-Reply Komentar Masuk (Inbound)</span>
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-400" />
+                <span>Riwayat Auto-Reply Komentar Masuk (Inbound)</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Daftar interaksi audiens pada postingan kita yang dibalas secara otomatis oleh AI dengan link produk Shopee.
+              </p>
+            </div>
+            <span className="text-[11px] font-semibold text-slate-400 bg-slate-800/60 px-3 py-1 rounded-full border border-slate-700/50 w-fit">
+              Total {inboundLogs.length} Interaksi
+            </span>
+          </div>
 
           {inboundLogs.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-xs">Belum ada aktivitas auto-reply yang tercatat.</div>
+            <div className="p-12 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
+              <Bot className="w-8 h-8 text-slate-600" />
+              <span>Belum ada aktivitas auto-reply yang tercatat. Jalankan pemindaian untuk mendeteksi komentar baru.</span>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-500 text-[11px]">
-                    <th className="pb-2.5">Penulis</th>
-                    <th className="pb-2.5">Teks Balasan Terkirim</th>
-                    <th className="pb-2.5">Produk Terkait</th>
-                    <th className="pb-2.5">Waktu</th>
-                    <th className="pb-2.5">Status</th>
+                    <th className="pb-3 min-w-[220px]">Postingan & Akun</th>
+                    <th className="pb-3 min-w-[220px]">Komentar Pengguna</th>
+                    <th className="pb-3 min-w-[200px]">Produk Terkait</th>
+                    <th className="pb-3 min-w-[250px]">Balasan AI Terkirim</th>
+                    <th className="pb-3 min-w-[90px]">Waktu</th>
+                    <th className="pb-3 min-w-[80px]">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {inboundLogs.map((log) => (
-                    <tr key={log.id} className="text-slate-300">
-                      <td className="py-3 font-semibold text-white">@{log.author_username || log.author_id}</td>
-                      <td className="py-3 max-w-xs truncate text-slate-400">{log.final_reply_text || '-'}</td>
-                      <td className="py-3 font-mono text-[11px] text-indigo-400">{log.product_id || '-'}</td>
-                      <td className="py-3 text-[11px] text-slate-500">
-                        {new Date(log.replied_at || log.created_at).toLocaleTimeString('id-ID', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}{' '}
-                        WIB
-                      </td>
-                      <td className="py-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                          {log.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {inboundLogs.map((log) => {
+                    const platform = log.platform?.toLowerCase() || 'threads';
+                    const platformBadge = 
+                      platform === 'facebook' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">Facebook</span>
+                      ) : platform === 'instagram' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-pink-500/10 text-pink-400 border border-pink-500/20">Instagram</span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">Threads</span>
+                      );
+
+                    return (
+                      <tr key={log.id} className="text-slate-300 hover:bg-slate-800/30 transition-colors">
+                        {/* 1. Postingan & Akun */}
+                        <td className="py-3.5 pr-3 align-top">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {platformBadge}
+                              <span className="font-semibold text-slate-200 text-[11px]">
+                                {log.account_name || 'Social Profile'}
+                              </span>
+                              {log.username && log.username !== log.account_name && (
+                                <span className="text-[10px] text-slate-500">(@{log.username})</span>
+                              )}
+                            </div>
+
+                            {/* Caption cuplikan */}
+                            {log.thread_caption ? (
+                              <p className="text-[11px] text-slate-400 line-clamp-2 italic bg-slate-950/40 p-2 rounded-xl border border-slate-800/40 leading-relaxed">
+                                "{log.thread_caption}"
+                              </p>
+                            ) : (
+                              <span className="text-[10px] font-mono text-slate-500">Post ID: {log.thread_id || log.target_reply_id}</span>
+                            )}
+
+                            {/* Link Postingan Asli 100% Akurat */}
+                            {log.permalink ? (
+                              <a
+                                href={log.permalink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-400 hover:text-indigo-300 font-semibold text-[10px] transition-all border border-indigo-500/30 w-fit"
+                              >
+                                <span>Buka Postingan Asli</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : log.thread_id ? (
+                              <span className="text-[10px] font-mono text-slate-600">ID #{log.thread_id}</span>
+                            ) : null}
+                          </div>
+                        </td>
+
+                        {/* 2. Komentar Masuk */}
+                        <td className="py-3.5 pr-3 align-top">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-white">@{log.author_username || log.author_id}</span>
+                              {log.intent && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                                  {log.intent === 'LINK_REQUEST' ? 'Minta Link' : log.intent === 'PRICE_INQUIRY' ? 'Tanya Harga' : log.intent === 'PRODUCT_QUESTION' ? 'Tanya Produk' : log.intent}
+                                </span>
+                              )}
+                            </div>
+                            <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/60 text-slate-200 text-[11px] leading-relaxed">
+                              {log.incoming_comment_text || log.comment_text || '(Pertanyaan Produk)'}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 3. Produk Terkait */}
+                        <td className="py-3.5 pr-3 align-top">
+                          <div className="space-y-1">
+                            <p className="font-bold text-indigo-300 line-clamp-2 leading-tight">
+                              {log.product_title || log.product_id}
+                            </p>
+                            {log.product_id && (
+                              <span className="inline-block text-[10px] font-mono text-slate-500">
+                                ID: {log.product_id.slice(0, 14)}...
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 4. Balasan AI Terkirim */}
+                        <td className="py-3.5 pr-3 align-top">
+                          <div className="bg-slate-950/40 p-2.5 rounded-xl border border-indigo-500/20 text-slate-300 text-[11px] space-y-1.5">
+                            <div className="flex items-center gap-1 text-[10px] text-indigo-400 font-semibold">
+                              <Bot className="w-3 h-3" />
+                              <span>AI Auto-Reply</span>
+                            </div>
+                            <p className="line-clamp-3 text-slate-300 leading-relaxed">
+                              {log.final_reply_text || '-'}
+                            </p>
+                          </div>
+                        </td>
+
+                        {/* 5. Waktu */}
+                        <td className="py-3.5 pr-3 align-top text-[11px] text-slate-400 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-500" />
+                            <span>
+                              {new Date(log.replied_at || log.created_at).toLocaleTimeString('id-ID', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}{' '}
+                              WIB
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-600 mt-0.5">
+                            {new Date(log.replied_at || log.created_at).toLocaleDateString('id-ID', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </div>
+                        </td>
+
+                        {/* 6. Status */}
+                        <td className="py-3.5 align-top">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            log.status === 'SENT' 
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                              : log.status === 'FAILED'
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          }`}>
+                            {log.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

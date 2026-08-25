@@ -7,19 +7,35 @@ const { matchProductToPublicPost } = require('../products/productMatcher');
 
 /**
  * Mencari context produk untuk sebuah postingan Threads dengan multi-tier fallback
+ * @returns {Promise<{ productId: string|null, productTitle: string, caption: string }>}
  */
 async function resolveThreadProductContext(threadId, account, userId) {
   const ctxRef = db.collection('threads_post_context').doc(`ctx_${threadId}`);
   const ctxDoc = await ctxRef.get();
 
-  if (ctxDoc.exists && ctxDoc.data().product_id) {
-    return ctxDoc.data().product_id;
+  if (ctxDoc.exists) {
+    const data = ctxDoc.data();
+    if (data.product_id) {
+      let productTitle = data.product_title || '';
+      if (!productTitle && data.product_id) {
+        try {
+          const pSnap = await db.collection('affiliate_products').doc(data.product_id).get();
+          if (pSnap.exists) productTitle = pSnap.data()?.title || '';
+        } catch (_) {}
+      }
+      return {
+        productId: data.product_id,
+        productTitle,
+        caption: data.caption || ''
+      };
+    }
   }
 
   // Tier 2 Fallback: Ambil caption thread langsung dari Meta Threads API & cari shortlink
   try {
-    const threadInfo = await get(threadId, account.access_token, { fields: 'id,text,timestamp' });
+    const threadInfo = await get(threadId, account.access_token, { fields: 'id,text,permalink,shortcode,timestamp' });
     const text = threadInfo?.text || '';
+    const officialPermalink = threadInfo?.permalink || (threadInfo?.shortcode ? `https://www.threads.net/post/${threadInfo.shortcode}` : '');
 
     if (text) {
       // Ekstrak kode shortlink seperti /s/r_xxx atau shortlink domain
@@ -61,14 +77,21 @@ async function resolveThreadProductContext(threadId, account, userId) {
             thread_id: String(threadId),
             user_id: userId,
             product_id: slData.product_id,
+            product_title: slData.title || '',
             shortlink_code: shortCode,
             caption: text,
+            permalink: officialPermalink,
             published_at: threadInfo.timestamp || new Date().toISOString(),
             status: 'ACTIVE',
           }, { merge: true });
 
           console.log(`[InboundEngine] 🔗 Context auto-resolved via shortlink #${shortCode} -> Product: ${slData.product_id}`);
-          return slData.product_id;
+          return {
+            productId: slData.product_id,
+            productTitle: slData.title || '',
+            caption: text,
+            permalink: officialPermalink
+          };
         }
       }
 
@@ -89,20 +112,27 @@ async function resolveThreadProductContext(threadId, account, userId) {
           thread_id: String(threadId),
           user_id: userId,
           product_id: match.matchedProduct.id,
+          product_title: match.matchedProduct.title || '',
           caption: text,
+          permalink: officialPermalink,
           published_at: threadInfo.timestamp || new Date().toISOString(),
           status: 'ACTIVE',
         }, { merge: true });
 
         console.log(`[InboundEngine] 🎯 Context auto-matched via caption text -> Product: ${match.matchedProduct.title}`);
-        return match.matchedProduct.id;
+        return {
+          productId: match.matchedProduct.id,
+          productTitle: match.matchedProduct.title || '',
+          caption: text,
+          permalink: officialPermalink
+        };
       }
     }
   } catch (err) {
     console.warn(`[InboundEngine] Warning resolving fallback context for thread #${threadId}:`, err.message);
   }
 
-  return null;
+  return { productId: null, productTitle: '', caption: '', permalink: '' };
 }
 
 /**
@@ -135,7 +165,10 @@ async function processSingleInboundReply({ reply, threadId, account, userId, own
   }
 
   // 2. Ambil konteks produk dengan multi-tier fallback
-  const productId = await resolveThreadProductContext(threadId, account, userId);
+  const threadContext = await resolveThreadProductContext(threadId, account, userId);
+  const productId = threadContext.productId;
+  const productTitle = threadContext.productTitle;
+  const threadCaption = threadContext.caption;
   
   if (!productId) {
     return { processed: false, reason: `Tidak ditemukan data context produk untuk thread #${threadId}` };
@@ -176,13 +209,18 @@ async function processSingleInboundReply({ reply, threadId, account, userId, own
     const dispatchResult = await dispatchReply({
       userId,
       accountId: account.id,
+      accountName: account.page_name || account.username || 'Threads Account',
+      platform: account.platform || 'threads',
       threadsUserId: account.page_id,
       token: account.access_token,
       targetReplyId: reply.id,
       threadId,
+      threadCaption,
+      incomingCommentText: reply.text || '',
       authorId: reply.id,
       authorUsername: reply.username || '',
       productId,
+      productTitle,
       intent: intentResult.intent,
       actionType: 'INBOUND',
       style: 'helpful',

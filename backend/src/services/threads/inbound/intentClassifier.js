@@ -110,10 +110,10 @@ async function classifyCommentIntent(text = '') {
     }
   }
 
-  // 4. LLM Fallback (jika apiKey tersedia)
-  if (env.mistralApiKey) {
-    try {
-      const prompt = `Klasifikasikan komentar media sosial berikut ke dalam salah satu kategori:
+  // 4. LLM Classifier (Groq Fast Mode openai/gpt-oss-20b + Mistral Fallback)
+  try {
+    const { callUnifiedAI } = require('../../agent/aiQueueService');
+    const prompt = `Klasifikasikan komentar media sosial berikut ke dalam salah satu kategori:
 1. LINK_REQUEST (pengguna ingin link pembelian produk / bertanya tempat beli)
 2. PRODUCT_QUESTION (pertanyaan spesifik detail produk seperti ukuran/warna/bahan)
 3. GENERAL_APPRECIATION (pujian umum tanpa mencari link seperti "bagus ya", "lucu")
@@ -125,29 +125,24 @@ Komentar: "${clean}"
 Jawab HANYA dalam format JSON valid:
 {"intent": "LINK_REQUEST|PRODUCT_QUESTION|GENERAL_APPRECIATION|NEGATIVE|IRRELEVANT", "confidence": 0.0-1.0, "reasoning": "penjelasan singkat"}`;
 
-      const response = await axios.post(
-        'https://api.mistral.ai/v1/chat/completions',
-        {
-          model: env.mistralModel || 'mistral-small-latest',
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: 150,
-          temperature: 0.1,
-        },
-        { headers: { Authorization: `Bearer ${env.mistralApiKey}` }, timeout: 8000 }
-      );
+    const rawResponse = await callUnifiedAI({
+      userPrompt: prompt,
+      jsonMode: true,
+      fastMode: true,
+      maxTokens: 150,
+      temperature: 0.1
+    });
 
-      const parsed = JSON.parse(response.data?.choices?.[0]?.message?.content || '{}');
-      if (parsed.intent) {
-        return {
-          intent: parsed.intent,
-          confidence: Number(parsed.confidence) || 0.85,
-          reasoning: parsed.reasoning || 'Evaluasi model AI',
-        };
-      }
-    } catch (_) {
-      // Ignore LLM error and fallback
+    const parsed = JSON.parse(rawResponse || '{}');
+    if (parsed.intent) {
+      return {
+        intent: parsed.intent,
+        confidence: Number(parsed.confidence) || 0.85,
+        reasoning: parsed.reasoning || 'Evaluasi model AI',
+      };
     }
+  } catch (_) {
+    // Ignore LLM error and fallback
   }
 
   return {

@@ -1,4 +1,4 @@
-const { callMistralAI } = require('./aiQueueService');
+const { callUnifiedAI } = require('./aiQueueService');
 const { selectTemplateByBandit, fillTemplatePlaceholders } = require('./templateService');
 const { generateContentFingerprint } = require('./contentFingerprint');
 
@@ -118,11 +118,12 @@ async function generatePostContent({
 
     let parsedCopy = null;
     try {
-      const rawAiResponse = await callMistralAI({
+      const rawAiResponse = await callUnifiedAI({
         systemPrompt: COPYWRITER_SYSTEM_PROMPT,
         userPrompt,
         temperature: 0.8,
-        jsonMode: true
+        jsonMode: true,
+        maxTokens: 500
       });
 
       try {
