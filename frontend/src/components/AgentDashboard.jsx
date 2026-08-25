@@ -66,6 +66,15 @@ export default function AgentDashboard({ setActiveTab }) {
     }
   };
 
+  const handleClearDecisions = async () => {
+    try {
+      await api.delete('/agent-orchestrator/decisions');
+      setDecisions([]);
+    } catch (err) {
+      console.error('Error clearing decisions:', err);
+    }
+  };
+
   const handleRunCycleNow = async () => {
     try {
       setRunningCycle(true);
@@ -350,7 +359,7 @@ export default function AgentDashboard({ setActiveTab }) {
                 <div className="flex items-center justify-between gap-2 text-indigo-400 font-bold">
                   <span className="line-clamp-1">{dec.summary}</span>
                   <span className="text-[10px] text-slate-500 font-normal shrink-0">
-                    {new Date(dec.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                    {dec.created_at ? new Date(dec.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''}
                   </span>
                 </div>
                 <p className="text-slate-400 leading-relaxed line-clamp-2">{dec.reasoning}</p>
