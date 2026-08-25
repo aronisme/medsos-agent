@@ -3,17 +3,19 @@ const { db } = require('../../config/firebase');
 const URL_REGEX = /(https?:\/\/[^\s"'<>\(\)]+)/gi;
 
 /**
- * Mengekstrak semua link yang ada di dalam caption dan mencocokkannya dengan database short_links.
+ * Mengekstrak semua link yang ada di dalam caption atau first reply dan mencocokkannya dengan database short_links.
  * @param {string} caption 
- * @param {string} userId 
+ * @param {string} [userId] 
+ * @param {string} [additionalText] - Teks tambahan seperti first_reply
  * @returns {Promise<{short_links: Array, total_clicks: number, human_clicks: number}>}
  */
-async function matchAffiliateLinks(caption, userId = null) {
-  if (!caption || typeof caption !== 'string') {
+async function matchAffiliateLinks(caption, userId = null, additionalText = '') {
+  const combinedText = `${caption || ''}\n${additionalText || ''}`.trim();
+  if (!combinedText) {
     return { short_links: [], total_clicks: 0, human_clicks: 0 };
   }
 
-  const matches = caption.match(URL_REGEX) || [];
+  const matches = combinedText.match(URL_REGEX) || [];
   if (matches.length === 0) {
     return { short_links: [], total_clicks: 0, human_clicks: 0 };
   }
@@ -78,3 +80,4 @@ async function matchAffiliateLinks(caption, userId = null) {
 module.exports = {
   matchAffiliateLinks,
 };
+

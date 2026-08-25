@@ -119,8 +119,12 @@ async function syncAllPostsAnalytics(userId, options = {}) {
       const existingDoc = await db.collection('post_analytics').doc(docId).get();
       const existingData = existingDoc.exists ? existingDoc.data() : null;
 
-      // Match affiliate links in caption
-      const affiliateData = await matchAffiliateLinks(item.caption, userId);
+      // 4. Closed-Loop Sync: Cari kecocokan postingan dari database
+      const matchedPost = platformPostMap.get(String(item.raw_post_id)) || null;
+      const additionalText = matchedPost?.first_reply?.text || '';
+
+      // Match affiliate links in caption or first_reply
+      const affiliateData = await matchAffiliateLinks(item.caption, userId, additionalText);
 
       // Normalize
       const normalized = normalizePost(
@@ -143,9 +147,8 @@ async function syncAllPostsAnalytics(userId, options = {}) {
       // Save historical snapshot
       await captureSnapshot(normalized, userId);
 
-      // 4. Closed-Loop Sync to Agent Memory & Product Lifecycle
-      const matchedPost = platformPostMap.get(String(item.raw_post_id)) || null;
-      const matchedProductId = affiliateData.short_links?.[0]?.product_id || matchedPost?.product_id || null;
+      // Primary Attribution: Relasi Database ID > Fallback Regex Matcher
+      const matchedProductId = matchedPost?.product_id || matchedPost?.first_reply?.product_id || affiliateData.short_links?.[0]?.product_id || null;
       const shortlinkCode = affiliateData.short_links?.[0]?.code || '';
       const totalClicks = normalized.affiliate?.human_clicks || normalized.affiliate?.total_clicks || 0;
       const rawViews = Number(normalized.metrics?.views) || Number(normalized.metrics?.reach) || 0;

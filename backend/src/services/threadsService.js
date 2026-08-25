@@ -138,6 +138,34 @@ function formatThreadsText(text = '', maxLen = 495) {
 }
 
 /**
+ * Publikasikan Root Post ke Threads (Text, Single Image/Video, atau Carousel).
+ * @param {{page_id:string, access_token:string}} account
+ * @param {string} content
+ * @param {Array<{media_url:string, media_type:string}>} media
+ * @param {Object} [options]
+ */
+async function publishThreadsPost(account, content, media = [], options = {}) {
+  return postToThreads(account, content, media, options);
+}
+
+/**
+ * Publikasikan Balasan / First Reply ke sebuah Thread (menggunakan reply_to_id).
+ * @param {{page_id:string, access_token:string}} account
+ * @param {string} replyText
+ * @param {string} rootPostId
+ * @param {Object} [options]
+ */
+async function publishThreadsReply(account, replyText, rootPostId, options = {}) {
+  if (!rootPostId) {
+    throw new Error('publishThreadsReply memerlukan rootPostId yang valid.');
+  }
+  if (!replyText || typeof replyText !== 'string' || !replyText.trim()) {
+    throw new Error('publishThreadsReply memerlukan teks balasan yang tidak kosong.');
+  }
+  return postToThreads(account, replyText, [], { ...options, replyToId: String(rootPostId) });
+}
+
+/**
  * Orkestrasi posting ke Meta Threads Account.
  * Mendukung: text, single image, single video, carousel (multi-gambar/video), reply, & quote post.
  * @param {{page_id:string, access_token:string}} account
@@ -216,5 +244,12 @@ async function postToThreads(account, content, media = [], options = {}) {
   return { postId };
 }
 
-module.exports = { postToThreads, GRAPH_VERSION };
+module.exports = {
+  postToThreads,
+  publishThreadsPost,
+  publishThreadsReply,
+  formatThreadsText,
+  GRAPH_VERSION,
+};
+
 

@@ -292,7 +292,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     // Filter platform: HANYA target Facebook dan Threads karena mendukung link klik langsung di caption
     const socialAccounts = accountsSnap.docs
       .map(d => ({ id: d.id, ...d.data() }))
-      .filter(acc => acc.platform !== 'instagram');
+      .filter(acc => ['facebook', 'threads'].includes(acc.platform));
 
     if (socialAccounts.length === 0) {
       logSteps.push('Peringatan: Tidak ada akun Facebook atau Threads yang aktif terhubung.');
@@ -545,6 +545,8 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           scheduled_at: targetDate.toISOString(),
           post_type: mediaCuration.media_type === 'video' ? 'reel' : 'feed',
           media: formattedMedia,
+          product_id: selectedProduct.id,
+          cta_type: postDraft.cta_type || (platform === 'threads' ? 'soft_cta' : 'direct_link_cta'),
           targets: [{
             id: Math.random().toString(36).substring(2, 9),
             account_id: targetAccount.id,
@@ -557,6 +559,21 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
+
+        // Khusus Threads: Sertakan struktur First-Reply (Link di Komentar Balasan Pertama)
+        if (platform === 'threads' && postDraft.first_reply_text) {
+          newPost.first_reply = {
+            enabled: true,
+            text: postDraft.first_reply_text,
+            product_id: String(selectedProduct.id),
+            affiliate_url: shortlinkUrl || selectedProduct.affiliate_url || selectedProduct.product_url || '',
+            status: 'pending',
+            reply_id: null,
+            reply_attempts: 0,
+            reply_last_error: null,
+            reply_published_at: null
+          };
+        }
 
         await postDocRef.set(newPost);
 

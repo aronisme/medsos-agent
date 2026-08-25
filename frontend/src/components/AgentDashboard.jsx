@@ -17,7 +17,8 @@ import {
   Activity,
   Terminal,
   Calendar,
-  Cpu
+  Cpu,
+  Trash2
 } from 'lucide-react';
 import api from '../api/client';
 
@@ -195,12 +196,20 @@ export default function AgentDashboard({ setActiveTab }) {
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* Execution Terminal Drawer (if triggered) */}
+      {/* Cycle Execution Terminal Log */}
       {cycleLogs.length > 0 && (
         <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 space-y-1 max-h-48 overflow-y-auto custom-scrollbar shadow-inner">
-          <div className="flex items-center gap-2 text-indigo-400 font-bold mb-2 pb-1 border-b border-slate-800">
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Agent Live Execution Stream</span>
+          <div className="flex items-center justify-between text-indigo-400 font-bold mb-2 pb-1 border-b border-slate-800">
+            <span className="flex items-center gap-1.5">
+              <Terminal className="w-3.5 h-3.5" />
+              <span>Agent Live Execution Stream</span>
+            </span>
+            <button
+              onClick={() => setCycleLogs([])}
+              className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
+            >
+              Tutup
+            </button>
           </div>
           {cycleLogs.map((log, i) => (
             <div key={i} className="leading-relaxed text-slate-400">
@@ -211,84 +220,92 @@ export default function AgentDashboard({ setActiveTab }) {
         </div>
       )}
 
-      {/* Quarter Performance Metrics Row */}
+      {/* Top Metrics Banner */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-1">
-            <Calendar className="w-4 h-4 text-indigo-400" />
-            <span>Kuartal Berjalan</span>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-medium">Status Kuartal</span>
+            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
           </div>
-          <p className="text-xl font-extrabold text-slate-100">
-            {quarterStatus?.current_quarter || '2026-Q3'}
+          <p className="text-lg font-bold text-white">
+            {quarterStatus?.current_quarter || 'Q-Aktif'}
           </p>
-          <span className="text-[11px] text-slate-500 mt-1 block">
-            {quarterStatus?.total_products || 0} Total Produk
-          </span>
+          <p className="text-[10px] text-slate-500">
+            {quarterStatus?.total_products || 0} Total Produk Terdaftar
+          </p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-1">
-            <Eye className="w-4 h-4 text-cyan-400" />
-            <span>Tayangan Sosmed</span>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-medium">Total Tayangan (Views)</span>
+            <Eye className="w-3.5 h-3.5 text-emerald-400" />
           </div>
-          <p className="text-xl font-extrabold text-cyan-300">
-            {Number(quarterStatus?.total_views || 0).toLocaleString('id-ID')}
+          <p className="text-lg font-bold text-emerald-400">
+            {(quarterStatus?.total_views || 0).toLocaleString('id-ID')}
           </p>
-          <span className="text-[11px] text-slate-500 mt-1 block">Di FB, IG, Threads</span>
+          <p className="text-[10px] text-slate-500">Dari seluruh postingan kuartal</p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-1">
-            <MousePointerClick className="w-4 h-4 text-emerald-400" />
-            <span>Klik Link Affiliate</span>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-medium">Klik Afiliasi Riil</span>
+            <MousePointerClick className="w-3.5 h-3.5 text-amber-400" />
           </div>
-          <p className="text-xl font-extrabold text-emerald-400">
-            {Number(quarterStatus?.total_clicks || 0).toLocaleString('id-ID')}
+          <p className="text-lg font-bold text-amber-400">
+            {(quarterStatus?.total_clicks || 0).toLocaleString('id-ID')}
           </p>
-          <span className="text-[11px] text-slate-500 mt-1 block">CTR Rata-rata: {quarterStatus?.avg_ctr || '0.00'}%</span>
+          <p className="text-[10px] text-slate-500">
+            CTR Rata-rata: {quarterStatus?.avg_ctr || 0}%
+          </p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-1">
-            <TrendingUp className="w-4 h-4 text-purple-400" />
-            <span>Produk Pemenang (Proven)</span>
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-medium">Status Autopilot</span>
+            <Cpu className="w-3.5 h-3.5 text-purple-400" />
           </div>
-          <p className="text-xl font-extrabold text-purple-300">
-            {(quarterStatus?.breakdown?.proven_count || 0) + (quarterStatus?.breakdown?.scaling_count || 0)} Produk
-          </p>
-          <span className="text-[11px] text-slate-500 mt-1 block">
-            {quarterStatus?.breakdown?.testing_count || 0} Sedang Diuji
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                config?.autopilot_enabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+              }`}
+            />
+            <span className="text-sm font-bold text-white">
+              {config?.autopilot_enabled ? 'Aktif Penuh' : 'Non-Aktif'}
+            </span>
+          </div>
+          <button
+            onClick={handleToggleAutopilot}
+            className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+          >
+            {config?.autopilot_enabled ? 'Matikan Autopilot' : 'Aktifkan Autopilot'}
+          </button>
         </div>
       </div>
 
-      {/* Sub-Agent Team System Grid */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-            <Cpu className="w-4 h-4 text-indigo-400" />
-            <span>Tim Sub-Agent Kolaboratif</span>
+      {/* Autonomous System Architecture Modules */}
+      <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800/80 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-indigo-400" />
+            <h3 className="text-sm font-bold text-slate-200">Arsitektur Agen Otonom</h3>
           </div>
+          <span className="text-xs text-slate-500">Autonomous Core</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {agentModules.map((mod, idx) => (
             <div
               key={idx}
-              className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/80 hover:border-indigo-500/30 transition-all flex items-start gap-3.5"
+              className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex items-start gap-3"
             >
               <div className="text-2xl p-2 rounded-xl bg-slate-950 border border-slate-800 shrink-0">
                 {mod.icon}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <h4 className="text-xs font-bold text-slate-200 line-clamp-1">{mod.name}</h4>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/20">
-                    {mod.status}
-                  </span>
-                </div>
-                <p className="text-[11px] font-medium text-slate-400 mb-1">{mod.role}</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2">{mod.desc}</p>
+                <h4 className="text-xs font-bold text-slate-200 mb-0.5">{mod.name}</h4>
+                <p className="text-[10px] text-slate-400 font-medium mb-1">{mod.role}</p>
+                <p className="text-[10px] text-slate-500 line-clamp-2">{mod.desc}</p>
               </div>
             </div>
           ))}
@@ -304,7 +321,19 @@ export default function AgentDashboard({ setActiveTab }) {
               Log Transparansi Keputusan AI Terkini
             </h3>
           </div>
-          <span className="text-xs text-slate-500">Real-time Decision Stream</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">Real-time Decision Stream</span>
+            {decisions.length > 0 && (
+              <button
+                onClick={handleClearDecisions}
+                className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                title="Bersihkan log keputusan"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Bersihkan</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {decisions.length === 0 ? (

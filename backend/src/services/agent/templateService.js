@@ -31,7 +31,7 @@ const SEED_TEMPLATES = [
     category: 'Universal',
     angle: 'Flash Promo FOMO',
     structure: '🚨 PROMO SPESIAL HARI INI 🚨\n\n{PRODUCT_NAME}\nDiskon {DISCOUNT} jadi cuma {PRICE_DISCOUNT}!\n\nKenapa harus checkout sekarang:\n{USP_BULLETS}\n\n⚡ Stok terbatas, amankan sebelum kehabisan:\n{CTA_LINK}\n\n{HASHTAGS}',
-    platform_fit: ['facebook', 'threads'],
+    platform_fit: ['facebook'],
     is_active: true,
   },
   // 4. Aesthetic Showcase & Lifestyle
@@ -41,7 +41,7 @@ const SEED_TEMPLATES = [
     category: 'Fashion & Beauty',
     angle: 'Aesthetic Showcase',
     structure: 'Definisi upgrade penampilan tanpa bikin dompet nangis ✨\n\n{PRODUCT_NAME} ini beneran estetik dan fungsional:\n{USP_BULLETS}\n\nCek racun shopee satu ini di sini:\n{CTA_LINK}\n\n{HASHTAGS}',
-    platform_fit: ['instagram', 'threads'],
+    platform_fit: ['instagram', 'facebook'],
     is_active: true,
   },
   // 5. Storytelling / Relatable Situation
@@ -51,16 +51,66 @@ const SEED_TEMPLATES = [
     category: 'Universal',
     angle: 'Storytelling',
     structure: 'Dulu sering banget ngerasain {PAIN_POINT}...\n\nSampai akhirnya nemu {PRODUCT_NAME} ini. Beneran life-changer banget buat sehari-hari!\n\nKelebihannya:\n{USP_BULLETS}\n\nHarganya juga ramah kantong: {PRICE_DISCOUNT}\nLink produk original:\n{CTA_LINK}\n\n{HASHTAGS}',
-    platform_fit: ['facebook', 'threads', 'instagram'],
+    platform_fit: ['facebook', 'instagram'],
     is_active: true,
   },
-  // 6. Threads Punchy Short Link
+  // 6. Threads Punchy Direct
   {
     id: 'tpl_threads_punchy_06',
     name: 'Threads Punchy One-Liner',
     category: 'Universal',
     angle: 'Honest Review',
-    structure: '{HOOK} 👇\n\n{PRODUCT_NAME} - {PRICE_DISCOUNT}\n\nLink beli: {CTA_LINK}',
+    structure: '{HOOK}\n\n{PRODUCT_NAME} ({PRICE_DISCOUNT})\n{USP_BULLETS}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 7. Threads IN THIS ECONOMY (Value Shock)
+  {
+    id: 'tpl_threads_in_this_economy_07',
+    name: 'Threads IN THIS ECONOMY Value Shock',
+    category: 'Universal',
+    angle: 'Flash Promo FOMO',
+    structure: '{HOOK}\n\n{PRODUCT_NAME} harganya cuma {PRICE_DISCOUNT} tapi looksnya beneran kayak brand mahal 🤌🏻✨\n{USP_BULLETS}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 8. Threads Maaf Teriak (Bestie Emotional Cry)
+  {
+    id: 'tpl_threads_maaf_teriak_08',
+    name: 'Threads Maaf Teriak Bestie Hype',
+    category: 'Fashion & Beauty',
+    angle: 'Aesthetic Showcase',
+    structure: '{HOOK}\n\n{PAIN_POINT}\n{USP_BULLETS}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 9. Threads POV Satisfying (Life-Hack Solution)
+  {
+    id: 'tpl_threads_pov_satisfying_09',
+    name: 'Threads POV Satisfying Life-Hack',
+    category: 'Home & Living',
+    angle: 'Problem-Agitate-Solution',
+    structure: '{HOOK}\n\n{PAIN_POINT}\n{USP_BULLETS}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 10. Threads Effortless Simple Curhat
+  {
+    id: 'tpl_threads_effortless_curhat_10',
+    name: 'Threads Effortless Simple Curhat',
+    category: 'Universal',
+    angle: 'Storytelling',
+    structure: '{HOOK}\n\n{PRODUCT_NAME} ini materialnya nyaman banget:\n{USP_BULLETS}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 11. Threads Listicle Alternatif Hemat
+  {
+    id: 'tpl_threads_listicle_alternatif_11',
+    name: 'Threads Listicle Alternatif Hemat',
+    category: 'Universal',
+    angle: 'Problem-Agitate-Solution',
+    structure: '{HOOK}\n\n{USP_BULLETS}\n\nModal {PRICE_DISCOUNT} udah dapet kualitas juara.',
     platform_fit: ['threads'],
     is_active: true,
   }
@@ -104,7 +154,7 @@ async function ensureSeedTemplates(userId = 'system') {
  * @returns {Promise<Object>} Template terpilih
  */
 async function selectTemplateByBandit({
-  platform = 'instagram',
+  platform = 'facebook',
   niche = 'Universal',
   objective = 'clicks',
   excludedTemplateIds = []

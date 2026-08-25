@@ -2,7 +2,7 @@ const { db } = require('../config/firebase');
 const env = require('../config/env');
 const { postToFacebook } = require('./facebookService');
 const { postToInstagram } = require('./instagramService');
-const { postToThreads } = require('./threadsService');
+const { postToThreads, publishThreadsPost, publishThreadsReply } = require('./threadsService');
 
 async function addLog(userId, action, details) {
   await db.collection('logs').add({
@@ -28,7 +28,7 @@ async function publishTarget(post, target, account) {
     if (env.dryRun || !account.access_token) {
       await new Promise(r => setTimeout(r, 1200));
       result = {
-        postId: `${target.platform === 'facebook' ? 'fb' : 'ig'}_dryrun_${Date.now()}`,
+        postId: `${target.platform === 'facebook' ? 'fb' : (target.platform === 'threads' ? 'th' : 'ig')}_dryrun_${Date.now()}`,
         dryRun: true,
       };
     } else if (target.platform === 'facebook') {
@@ -36,7 +36,7 @@ async function publishTarget(post, target, account) {
     } else if (target.platform === 'instagram') {
       result = await postToInstagram(account, post.content, post.media);
     } else if (target.platform === 'threads') {
-      result = await postToThreads(account, post.content, post.media, post.threads_options || {});
+      result = await publishThreadsPost(account, post.content, post.media, post.threads_options || {});
     } else {
       throw new Error(`Platform tidak dikenal: ${target.platform}`);
     }
@@ -85,6 +85,7 @@ async function publishPostNow(postId) {
 
   const results = [];
   let targetsUpdated = false;
+  let firstReplyUpdated = false;
 
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
@@ -102,11 +103,51 @@ async function publishPostNow(postId) {
       }
       
       try {
+        // FASE 1: Publikasikan Root Post
         const pubRes = await publishTarget(post, t, accDoc.data());
         t.status = 'success';
         t.post_id_on_platform = pubRes.postId;
         t.error_message = null;
         results.push(pubRes);
+
+        // FASE 2: Publikasikan First Reply (Khusus Threads dengan First Reply Enabled)
+        if (t.platform === 'threads' && post.first_reply?.enabled && post.first_reply.text) {
+          // Idempotency check: Jangan kirim ulang jika reply sudah berstatus published
+          if (post.first_reply.status !== 'published' || !post.first_reply.reply_id) {
+            post.first_reply.reply_attempts = (post.first_reply.reply_attempts || 0) + 1;
+            try {
+              let replyRes;
+              if (env.dryRun || !accDoc.data().access_token) {
+                replyRes = { postId: `th_reply_dryrun_${Date.now()}` };
+              } else {
+                replyRes = await publishThreadsReply(accDoc.data(), post.first_reply.text, pubRes.postId);
+              }
+              post.first_reply.status = 'published';
+              post.first_reply.reply_id = replyRes.postId;
+              post.first_reply.reply_published_at = new Date().toISOString();
+              post.first_reply.reply_last_error = null;
+              firstReplyUpdated = true;
+              
+              await addLog(post.user_id, 'threads_first_reply_success', {
+                targetId: t.id,
+                rootPostId: pubRes.postId,
+                replyId: replyRes.postId
+              });
+            } catch (replyErr) {
+              const replyErrMsg = replyErr?.response?.data?.error?.message || replyErr.message;
+              console.warn('[publishPostNow] Threads first reply warning:', replyErrMsg);
+              post.first_reply.status = 'failed';
+              post.first_reply.reply_last_error = replyErrMsg;
+              firstReplyUpdated = true;
+
+              await addLog(post.user_id, 'threads_first_reply_failed', {
+                targetId: t.id,
+                rootPostId: pubRes.postId,
+                error: replyErrMsg
+              });
+            }
+          }
+        }
       } catch (err) {
         t.status = 'failed';
         t.error_message = err.message;
@@ -116,7 +157,7 @@ async function publishPostNow(postId) {
     }
   }
 
-  if (targetsUpdated) {
+  if (targetsUpdated || firstReplyUpdated) {
     const newStatus = computePostStatus(targets);
     const updateData = { 
       targets, 
@@ -125,6 +166,9 @@ async function publishPostNow(postId) {
     };
     if (newStatus === 'posted' && !post.posted_at) {
       updateData.posted_at = new Date().toISOString();
+    }
+    if (post.first_reply) {
+      updateData.first_reply = post.first_reply;
     }
     await docRef.update(updateData);
 
@@ -167,6 +211,7 @@ async function publishPostNow(postId) {
         const successTarget = targets.find(t => t.status === 'success' && t.post_id_on_platform);
         await memRef.update({
           post_id_on_platform: successTarget ? successTarget.post_id_on_platform : null,
+          reply_id_on_platform: post.first_reply?.reply_id || null,
           published_at: new Date().toISOString(),
           status: newStatus === 'posted' ? 'published' : newStatus,
           updated_at: new Date().toISOString()
@@ -189,10 +234,12 @@ async function publishPostNow(postId) {
           id: `ctx_${tt.post_id_on_platform}`,
           account_id: tt.account_id,
           thread_id: String(tt.post_id_on_platform),
+          reply_id: post.first_reply?.reply_id || null,
           post_id: postId,
           user_id: post.user_id,
           product_id: productId,
           caption: post.content || '',
+          first_reply: post.first_reply?.text || '',
           published_at: new Date().toISOString(),
           status: 'ACTIVE',
         }, { merge: true });
@@ -206,3 +253,4 @@ async function publishPostNow(postId) {
 }
 
 module.exports = { publishPostNow, addLog };
+

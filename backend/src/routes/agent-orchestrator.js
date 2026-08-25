@@ -11,7 +11,7 @@ const {
   getProductPostHistory,
   getCurrentQuarter
 } = require('../services/agent/productPostMemoryService');
-const { getProductDecisions } = require('../services/agent/decisionLogger');
+const { getProductDecisions, clearAgentDecisions } = require('../services/agent/decisionLogger');
 const { getActiveKnowledgeInsights, synthesizeKnowledge } = require('../services/agent/knowledgeSynthesizer');
 const { getExperiments, evaluateExperiment } = require('../services/agent/experimentService');
 const { diagnoseProductPerformance } = require('../services/agent/diagnosticService');
@@ -156,6 +156,20 @@ router.get('/decisions', async (req, res) => {
     res.json({ success: true, decisions: logs });
   } catch (err) {
     console.error('[GET /agent/decisions Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/agent/decisions
+ * Menghapus log keputusan AI milik pengguna
+ */
+router.delete('/decisions', async (req, res) => {
+  try {
+    const result = await clearAgentDecisions(req.user.id);
+    res.json({ success: true, message: 'Log keputusan berhasil dibersihkan.', ...result });
+  } catch (err) {
+    console.error('[DELETE /agent/decisions Error]:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

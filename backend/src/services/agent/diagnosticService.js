@@ -63,19 +63,34 @@ async function diagnoseProductPerformance(productId, userId = 'system') {
       };
     }
 
-    // 2. DIAGNOSIS 1: Traffic Problem (Hanya diuji pada 1 platform atau jam sepi)
-    if (platformsTested.size === 1 && history.length >= 2) {
-      const remainingPlatforms = ['facebook', 'instagram', 'threads'].filter(p => !platformsTested.has(p));
-      const nextPlatform = remainingPlatforms[0] || 'threads';
+    // Ambil daftar akun aktif pengguna dari database untuk mengetahui platform mana saja yang benar-benar aktif
+    const accountsSnap = await db.collection('social_accounts')
+      .where('user_id', '==', userId)
+      .where('is_active', 'in', [1, true, '1'])
+      .get();
+
+    // HANYA ambil platform yang didukung untuk posting autopilot afiliasi (Facebook & Threads)
+    const activePostingPlatforms = Array.from(new Set(
+      accountsSnap.docs
+        .map(d => d.data().platform)
+        .filter(p => p && ['facebook', 'threads'].includes(p))
+    ));
+
+    // Platform aktif yang belum pernah diuji untuk produk ini
+    const remainingPlatforms = activePostingPlatforms.filter(p => !platformsTested.has(p));
+
+    // 2. DIAGNOSIS 1: Traffic Problem (Hanya jika user memiliki platform aktif lain yang belum diuji)
+    if (remainingPlatforms.length > 0 && history.length >= 2) {
+      const nextPlatform = remainingPlatforms[0];
 
       const result = {
         product_id: productId,
         diagnosis_category: 'TRAFFIC_PROBLEM',
-        finding: `Produk baru dicoba di platform ${Array.from(platformsTested).join(', ')} (${history.length}x). Kemungkinan audiens di platform ini kurang cocok.`,
+        finding: `Produk baru dicoba di platform ${Array.from(platformsTested).join(', ')} (${history.length}x). Masih ada platform aktif yang belum diuji (${nextPlatform}).`,
         recommended_action: `TEST_ON_ALTERNATIVE_PLATFORM_${nextPlatform.toUpperCase()}`,
         next_test_config: { platform: nextPlatform },
         can_stop: false,
-        reasoning: `Jangan hentikan produk sebelum menguji di platform lain (${nextPlatform}).`
+        reasoning: `Jangan hentikan produk sebelum menguji di platform aktif lain (${nextPlatform}).`
       };
 
       await logAgentDecision({
@@ -91,7 +106,7 @@ async function diagnoseProductPerformance(productId, userId = 'system') {
     }
 
     // 3. DIAGNOSIS 2: Content Problem (Angle & Media Kurang Bervariasi)
-    if (anglesTested.size <= 1 || mediaTypesTested.size <= 1) {
+    if ((anglesTested.size <= 1 || mediaTypesTested.size <= 1) && history.length < 3) {
       const result = {
         product_id: productId,
         diagnosis_category: 'CONTENT_PROBLEM',
@@ -142,12 +157,12 @@ async function diagnoseProductPerformance(productId, userId = 'system') {
     }
 
     // 5. DIAGNOSIS 4: Product Problem (Semua Variasi Sudah Diuji & Gagal)
-    // Jika sudah diuji >= 3 kali, di multi-platform, multi-angle, tapi total klik < 5
+    // Jika sudah diuji >= 3 kali, di seluruh platform aktif, multi-angle/media, tapi total klik < 5
     if (history.length >= 3) {
       const result = {
         product_id: productId,
         diagnosis_category: 'PRODUCT_PROBLEM',
-        finding: `Produk telah diuji ${history.length} kali melintasi platform (${Array.from(platformsTested).join(', ')}), berbagai sudut pandang (${Array.from(anglesTested).join(', ')}), dan jam berbeda, namun tetap menghasilkan respon rendah (Total ${totalClicks} klik).`,
+        finding: `Produk telah diuji ${history.length} kali melintasi platform aktif (${Array.from(platformsTested).join(', ') || 'aktif'}), berbagai sudut pandang (${Array.from(anglesTested).join(', ')}), dan jam berbeda, namun tetap menghasilkan respon rendah (Total ${totalClicks} klik).`,
         recommended_action: 'STOP_FOR_QUARTER',
         can_stop: true,
         reasoning: 'Semua hipotesis kreatif dan traffic telah diuji. Disarankan mengistirahatkan produk ini untuk kuartal berjalan agar slot jadwal dialihkan ke produk berpotensi tinggi.'

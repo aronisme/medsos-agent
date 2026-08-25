@@ -70,7 +70,33 @@ async function getProductDecisions(userId, productId, limit = 20) {
   }
 }
 
+/**
+ * Menghapus riwayat keputusan agen untuk user tertentu
+ * @param {string} userId 
+ */
+async function clearAgentDecisions(userId) {
+  try {
+    const query = db.collection('agent_decisions_log')
+      .where('user_id', '==', userId);
+
+    const snapshot = await query.get();
+    if (snapshot.empty) return { success: true, count: 0 };
+
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    return { success: true, count: snapshot.docs.length };
+  } catch (err) {
+    console.error('[clearAgentDecisions Error]:', err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   logAgentDecision,
   getProductDecisions,
+  clearAgentDecisions,
 };
