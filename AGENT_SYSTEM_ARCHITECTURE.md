@@ -1,6 +1,6 @@
 # 🤖 Arsitektur Sistem AI Autonomous Marketing Agent
 
-Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeline*), state machine siklus produk, logika pengambilan keputusan, integrasi multi-platform, serta panduan teknis bagi developer agar pengembangan sistem agen di masa depan tetap stabil, sinkron, dan bebas dari *bug* keterputusan alur (*broken pipeline*).
+Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeline*), state machine siklus produk, logika pengambilan keputusan, integrasi multi-platform, strategi publikasi dua fase (*Two-Phase First-Reply*), serta panduan teknis bagi developer agar pengembangan sistem agen di masa depan tetap stabil, sinkron, dan bebas dari *bug* keterputusan alur (*broken pipeline*).
 
 ---
 
@@ -11,16 +11,17 @@ Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeli
 4. [Deep-Dive 7 Pilar Agen Otonom](#4-deep-dive-7-pilar-agen-otonom)
    - [Pilar 1: Product Intelligence Profiler](#pilar-1-product-intelligence-profiler)
    - [Pilar 2: Kurasi Media & Anti-Reuse Per Platform](#pilar-2-kurasi-media--anti-reuse-per-platform)
-   - [Pilar 3: Contextual Multi-Armed Bandit Copywriting](#pilar-3-contextual-multi-armed-bandit-copywriting)
+   - [Pilar 3: Contextual Bandit Copywriting & Threads First-Reply Engine](#pilar-3-contextual-bandit-copywriting--threads-first-reply-engine)
    - [Pilar 4: Semantic Content Fingerprinting](#pilar-4-semantic-content-fingerprinting)
    - [Pilar 5: Dynamic Prime-Time Grid Scheduler](#pilar-5-dynamic-prime-time-grid-scheduler)
    - [Pilar 6: Product Post Memory Ledger & Lifecycle State Machine](#pilar-6-product-post-memory-ledger--lifecycle-state-machine)
    - [Pilar 7: Diagnostic Root-Cause Analyzer & Decision Stream](#pilar-7-diagnostic-root-cause-analyzer--decision-stream)
-5. [Aturan Khusus Platform Sosial Media & Status Aktivasi Akun](#5-aturan-khusus-platform-sosial-media--status-aktivasi-akun)
-6. [Skema Database & Koleksi Firestore](#6-skema-database--koleksi-firestore)
-7. [Background Worker, Throttling & Cron Lifecycle](#7-background-worker-throttling--cron-lifecycle)
-8. [Katalog REST API Endpoints](#8-katalog-rest-api-endpoints)
-9. [Prinsip Emas Pengembangan & Troubleshooting Developer](#9-prinsip-emas-pengembangan--troubleshooting-developer)
+5. [Arsitektur Publikasi Dua Fase (Two-Phase State Machine & Idempotency)](#5-arsitektur-publikasi-dua-fase-two-phase-state-machine--idempotency)
+6. [Aturan Khusus Platform Sosial Media & Status Aktivasi Akun](#6-aturan-khusus-platform-sosial-media--status-aktivasi-akun)
+7. [Skema Database & Koleksi Firestore](#7-skema-database--koleksi-firestore)
+8. [Background Worker, Throttling & Cron Lifecycle](#8-background-worker-throttling--cron-lifecycle)
+9. [Katalog REST API Endpoints](#9-katalog-rest-api-endpoints)
+10. [Prinsip Emas Pengembangan & Troubleshooting Developer](#10-prinsip-emas-pengembangan--troubleshooting-developer)
 
 ---
 
@@ -31,8 +32,11 @@ Sistem **AI Autonomous Marketing Agent** dibangun dengan konsep *Closed-Loop Con
 Tujuan utama agen adalah:
 1. **Mengotomatisasi Penuh (0-Touch Autopilot)**: Memilih produk Shopee dari katalog, menyusun materi visual, meracik copywriting berdasarkan sudut pandang terbukti, menjadwalkan ke jam-jam emas (*Peak Golden Hours*), hingga mempublikasikan ke Facebook dan Threads.
 2. **Attribution & Validasi Tautan Ketat**: Setiap postingan menghasilkan *shortlink* unik internal (`/s/:code`) yang diteruskan ke link resmi Shopee Affiliate (`tracking: source, campaign, content`) untuk mendeteksi klik manusia (*human clicks*) secara real-time.
-3. **Mencegah Polusi Akun (Anti-Duplicate & Fresh Media)**: Agen menjamin tidak ada foto/video yang dipakai berulang pada platform yang sama, serta menolak teks yang memiliki kemiripan semantik $> 85\%$.
-4. **Lifecycle Governance (Quarterly Stop)**: Agen secara proaktif mendiagnosis produk yang berkinerja buruk dan mengistirahatkannya (`STOP_FOR_QUARTER`) agar slot posting dialokasikan ke produk berpotensi tinggi.
+3. **Pemisahan Konteks Platform (Facebook Caption Link vs Threads First-Reply)**: 
+   - **Facebook**: Copywriting mendalam dengan tautan langsung di badan caption.
+   - **Threads**: Copywriting bergaya percakapan santai (*conversation-first*), bebas dari tumpukan hashtag tradisional (*clean policy*), dan tautan afiliasi disajikan otomatis pada **balasan/komentar pertama (*first reply*)** menggunakan `reply_to_id`.
+4. **Mencegah Polusi Akun (Anti-Duplicate & Fresh Media)**: Agen menjamin tidak ada foto/video yang dipakai berulang pada platform yang sama, serta menolak teks yang memiliki kemiripan semantik $> 85\%$.
+5. **Lifecycle Governance (Quarterly Stop)**: Agen secara proaktif mendiagnosis produk yang berkinerja buruk dan mengistirahatkannya (`STOP_FOR_QUARTER`) agar slot posting dialokasikan ke produk berpotensi tinggi.
 
 ---
 
@@ -57,23 +61,27 @@ flowchart TD
         H[social_accounts WHERE is_active=1] -->|Akun Aktif| F
     end
 
-    subgraph CONTENT_GEN["4. Visual & Copywriting Engine"]
+    subgraph CONTENT_GEN["4. Visual & Dual-Engine Copywriting"]
         F --> I[mediaEvaluatorService]
         I -->|Cek used_media_by_platform| J[Max 2 Foto Segar / 1 Video Demo]
         F --> K[templateService: Multi-Armed Bandit]
         K -->|80% Top CTR / 20% Explore| L[Template Terpilih]
-        J & L --> M[copywritingService: Unified AI]
-        M --> N[cleanCaptionText + Deduplicate Hashtags]
-        N --> O[contentFingerprint]
+        J & L --> M[copywritingService: Facebook Prompt vs Threads Prompt]
+        M -->|Threads Dual-Output| N1[Caption Root Post + First Reply Object]
+        M -->|Facebook Single-Output| N2[Caption dengan Tautan Langsung]
+        N1 & N2 --> O[contentFingerprint]
         O -->|Similarity < 85%| P[Simpan ke Koleksi posts status=scheduled]
-        O -->|Similarity >= 85%| Q[Reject & Coba Ulang]
+        O -->|Similarity >= 85%| Q[Reject & Kocok Ulang]
     end
 
-    subgraph DISPATCH_SYNC["5. Eksekusi & Closed-Loop Analytics"]
+    subgraph TWO_PHASE_DISPATCH["5. Two-Phase Dispatcher & Analytics Sync"]
         P --> R[scheduler.js: Fast-Path 1 Menit]
-        R --> S[Meta Graph APIs: Facebook / Threads]
-        S --> T[Shortlink Redirect & Human Click Tracker]
-        T & S --> U[syncService.js: Tarik Views & Clicks]
+        R --> S1[Phase 1: publishThreadsPost / postToFacebook]
+        S1 -->|Simpan root_post_id| S2{first_reply.enabled?}
+        S2 -- Ya --> S3[Phase 2: publishThreadsReply reply_to_id]
+        S2 -- Tidak --> S4[Selesai Publikasi]
+        S3 & S4 --> T[Shortlink Redirect & Human Click Tracker]
+        T & S1 --> U[syncService.js: Tarik Views & Clicks via Database ID]
         U --> V[product_post_memory Ledger]
     end
 
@@ -81,7 +89,7 @@ flowchart TD
         V --> W[knowledgeSynthesizer: Sintesis Jam & Angle Terbaik]
         W --> G
         V --> Y[diagnosticService: Root-Cause Analyzer]
-        Y -->|Diagnosa Dinamis| Z[agent_decisions_log Stream]
+        Y -->|Diagnosa Dinamis Akun Aktif| Z[agent_decisions_log Stream]
         Y -->|Gagal 3x Multi-Angle| AA[Update Produk STOP_FOR_QUARTER]
     end
 ```
@@ -98,28 +106,29 @@ backend/src/
 │   │   ├── productIntelligenceService.js# Ekstraksi persona, pain points, & USP dari Shopee
 │   │   ├── mediaEvaluatorService.js    # Filter media anti-reuse per platform (max 2 foto / 1 video)
 │   │   ├── templateService.js          # Pustaka template & Contextual Multi-Armed Bandit (MAB)
-│   │   ├── copywritingService.js       # Generator copy berbasis waktu WIB, angle, dan batasan karakter
+│   │   ├── copywritingService.js       # Generator copy (Facebook Storytelling vs Threads Conversation-First)
 │   │   ├── contentFingerprint.js       # Kalkulator kemiripan teks (Levenshtein / Jaccard / Cosine)
 │   │   ├── productPostMemoryService.js # Buku besar memori postingan (product_post_memory) & skor dekomposisi
 │   │   ├── metricsCalculator.js        # Kalkulasi CTR, skor normalisasi, & evaluasi A/B testing
 │   │   ├── experimentService.js        # Pengelola eksperimen A/B testing hipotesis
-│   │   ├── diagnosticService.js        # Root-cause analyzer (Traffic, Content, Offer, Product)
+│   │   ├── diagnosticService.js        # Root-cause analyzer terhubung akun aktif (Traffic, Content, Offer, Product)
 │   │   ├── decisionLogger.js           # Logger transparansi keputusan AI (agent_decisions_log)
 │   │   ├── knowledgeSynthesizer.js     # Pembelajaran pola data menjadi wawasan (knowledge_insights)
 │   │   └── aiQueueService.js           # Lapisan wrapper pemanggilan OpenAI/Gemini/Deepseek dengan rate-limiter
 │   ├── postAnalytics/
-│   │   ├── syncService.js              # Sinkronisasi analitik berkala Meta API & pelacak link
+│   │   ├── syncService.js              # Sinkronisasi analitik berkala Meta API & pelacak link via Database ID
 │   │   ├── normalizer.js               # Normalisasi metrik antar platform sosial media
-│   │   ├── linkMatcher.js              # Pencocokan link afiliasi dari teks caption
+│   │   ├── linkMatcher.js              # Pencocokan link afiliasi dari teks caption & first reply
 │   │   ├── facebookAnalytics.js        # Adapter Graph API Facebook Page & Reels Insights
 │   │   ├── instagramAnalytics.js       # Adapter Graph API Instagram Media & Insights
 │   │   └── threadsAnalytics.js         # Adapter Graph API Threads Posts & Engagement
 │   ├── threads/
 │   │   ├── inbound/inboundService.js   # Pemindai balasan masuk Threads untuk auto-reply kontekstual
 │   │   └── outbound/outboundService.js # Pemantau kata kunci tren Threads untuk social listening
+│   ├── threadsService.js               # Kontrak domain Threads API (publishThreadsPost & publishThreadsReply)
 │   ├── telegramService.js              # Pengiriman laporan kinerja harian & notifikasi siklus
 │   ├── tokenRefreshService.js          # Auto-refresh masa aktif long-lived Meta tokens
-│   └── postService.js                  # Eksekutor publikasi postingan ke Facebook/Threads
+│   └── postService.js                  # Two-Phase State Machine Dispatcher publikasi postingan
 ├── workers/
 │   └── scheduler.js                    # Worker tunggal berkala (Cron / Google Apps Script trigger)
 └── routes/
@@ -147,59 +156,56 @@ backend/src/
     "recommended_angles": ["Problem-Agitate-Solution", "Honest Review"]
   }
   ```
-- **Caching**: Profil disimpan di field `agent_profile` pada dokumen `affiliate_products`. Jika sudah ada, agen tidak membuang token AI untuk menganalisis ulang.
+- **Caching**: Profil disimpan di field `agent_profile` pada dokumen `affiliate_products`. Jika sudah ada, agen tidak menganalisis ulang.
 
 ---
 
 ### Pilar 2: Kurasi Media & Anti-Reuse Per Platform
 *File: `backend/src/services/agent/mediaEvaluatorService.js`*
 - **Aturan Ketat**:
-  1. Media yang **sudah pernah diposting pada platform tertentu (misal: Facebook)** disimpan pada `used_media_by_platform.facebook` dan **dilarang dipakai lagi di Facebook** (meskipun berbeda akun Facebook).
+  1. Media yang **sudah pernah diposting pada platform tertentu (misal: Facebook)** disimpan pada `used_media_by_platform.facebook` dan **dilarang dipakai lagi di Facebook**.
   2. Media tersebut **tetap boleh dipakai di platform lain (misal: Threads)** jika belum pernah digunakan di Threads.
   3. Maksimal **1 Video Demo Segar** ATAU Maksimal **2 Foto Produk Bersih** per postingan.
   4. Jika semua media produk sudah habis terpakai pada platform tersebut, agen menolak kurasi (`no_fresh_media: true`) dan memilih produk lain.
 
 ---
 
-### Pilar 3: Contextual Multi-Armed Bandit Copywriting
+### Pilar 3: Contextual Bandit Copywriting & Threads First-Reply Engine
 *Files: `backend/src/services/agent/templateService.js` & `backend/src/services/agent/copywritingService.js`*
 - **Algoritma Epsilon-Greedy**:
   - **80% Eksploitasi**: Memilih template dengan CTR (*Click-Through Rate*) tertinggi untuk kombinasi `platform + objective`.
-  - **20% Eksplorasi**: Memilih template alternatif/baru secara acak untuk mencegah kejenuhan audiens dan menemukan pola baru.
-- **Konteks Waktu Indonesia (WIB)**:
-  - **Sesi Pagi (07:00–09:00 WIB)**: Bahasa segar, semangat memulai hari / kerja / kuliah.
-  - **Sesi Siang (11:30–13:30 WIB)**: Bahasa santai jam istirahat makan siang.
-  - **Sesi Malam (19:00–21:30 WIB)**: Bahasa santai waktu rebahan malam / belanja santai.
-- **Pembersihan Markdown**:
-  - Agen **menghapus seluruh markdown bold asterisks (`**` / `*`)** agar teks tampil natural seperti postingan pengguna asli.
-  - Duplikasi hashtag dieliminasi otomatis (`deduplicateHashtags`).
+  - **20% Eksplorasi**: Memilih template alternatif/baru secara acak untuk mencegah kejenuhan audiens.
+- **Kebijakan Gaya Penulisan Threads (Clean & Conversation-First)**:
+  - **Zero Hashtag Clutter**: Menghilangkan tumpukan hashtag tradisional (`#Shopee #RacunShopee` ditiadakan) agar teks tampil natural seperti percakapan organik.
+  - **5 Kelas CTA Dinamis**:
+    1. `conversation_cta`: Memantik opini / pertanyaan santai (*"menurut kalian mending peach apa matcha?"*).
+    2. `curiosity_cta`: Memancing penasaran (*"ternyata yang termurah justru yang ini 😭"*).
+    3. `soft_cta`: Menawarkan link secara halus (*"detailnya aku spill di reply ya 👇"*).
+    4. `direct_link_cta`: Ajakan link langsung (*"yang nanya link, aku drop di bawah 👇"*).
+    5. `no_cta`: Tanpa CTA sama sekali (murni relatable sharing / humor).
+  - **Panjang Teks Fleksibel**: Target gaya 150–350 karakter (maksimal aman API < 480 karakter).
+  - **Dual-Output**: Menghasilkan `caption` (postingan utama) dan `first_reply_text` (teks komentar balasan pertama yang memuat link afiliasi).
 
 ---
 
 ### Pilar 4: Semantic Content Fingerprinting
 *File: `backend/src/services/agent/contentFingerprint.js`*
-- **Tujuan**: Mencegah akun terkena penalti spam dari algoritma Meta akibat teks caption yang terlalu mirip.
-- **Mekanisme**:
-  - Agen mengambil seluruh postingan 7 hari terakhir pada platform target.
-  - Menghitung kemiripan menggunakan kombinasi **Jaccard Token Similarity** dan **Levenshtein Distance**.
-  - Jika tingkat kemiripan $\ge 85\%$, draf postingan otomatis ditolak (*rejected*) dan agen mengocok ulang sudut pandang.
+- **Tujuan**: Mencegah akun terkena penalti spam dari algoritma akibat teks caption yang terlalu mirip.
+- **Mekanisme**: Menghitung kemiripan menggunakan kombinasi **Jaccard Token Similarity** dan **Levenshtein Distance** terhadap postingan 7 hari terakhir. Jika tingkat kemiripan $\ge 85\%$, draf postingan otomatis ditolak (*rejected*) dan dikocok ulang.
 
 ---
 
 ### Pilar 5: Dynamic Prime-Time Grid Scheduler
 *File: `backend/src/services/agent/orchestratorService.js`*
-- **Struktur Slot Harian**:
-  - 3 Sesi Utama (Pagi, Siang, Malam) dengan 3 Slot per Sesi (Total 9 slot prime-time per hari per akun).
-- **Penyesuaian Jam Emas (Learned Golden Peak)**:
-  - Jika modul pembelajaran (`knowledgeSynthesizer`) mendeteksi bahwa Sesi Malam memiliki CTR tertinggi, agen secara dinamis mengalokasikan 5 slot padat di sekitar jam emas tersebut (`is_golden_peak: true`).
-- **Prioritas Jam Emas**: Pada slot bertanda Jam Emas, agen memprioritaskan produk bertaraf **PROVEN / Pemenang**.
+- **Struktur Slot Harian**: 3 Sesi Utama (Pagi, Siang, Malam) dengan 3 Slot per Sesi (Total 9 slot prime-time per hari per akun).
+- **Penyesuaian Jam Emas (Learned Golden Peak)**: Jika modul pembelajaran (`knowledgeSynthesizer`) mendeteksi bahwa Sesi Malam memiliki CTR tertinggi, agen secara dinamis mengalokasikan 5 slot padat di sekitar jam emas tersebut (`is_golden_peak: true`) dan memprioritaskan produk **PROVEN / Pemenang**.
 
 ---
 
 ### Pilar 6: Product Post Memory Ledger & Lifecycle State Machine
 *File: `backend/src/services/agent/productPostMemoryService.js`*
-- Setiap postingan yang dibuat dicatat ke koleksi `product_post_memory`.
-- **Siklus Hidup Produk (Lifecycle State Machine)**:
+- Setiap postingan dicatat ke koleksi `product_post_memory`.
+- **Siklus Hidup Produk**:
   ```text
   [NEW] -> (Diposting 1-2x) -> [TESTING]
                                   │
@@ -213,63 +219,96 @@ backend/src/
 
 ### Pilar 7: Diagnostic Root-Cause Analyzer & Decision Stream
 *Files: `backend/src/services/agent/diagnosticService.js` & `backend/src/services/agent/decisionLogger.js`*
+- Terhubung secara dinamis ke tabel `social_accounts` yang berstatus `is_active: 1`.
 - Mendiagnosis produk bermasalah ke dalam 4 kategori akar masalah:
-  1. **TRAFFIC_PROBLEM**: Produk baru diuji pada 1 platform dan **masih ada platform aktif lain yang belum diuji** (misal: baru diuji di Facebook, belum diuji di Threads). Tindakan: Uji di platform aktif berikutnya.
+  1. **TRAFFIC_PROBLEM**: Produk baru diuji pada 1 platform dan masih ada platform aktif lain yang belum diuji (misal: baru diuji di Facebook, belum diuji di Threads). Tindakan: Uji di platform aktif berikutnya.
   2. **CONTENT_PROBLEM**: Baru diuji 1 sudut pandang/media. Tindakan: Uji sudut pandang berbeda (PAS vs Honest Review vs Promo).
   3. **OFFER_PROBLEM**: Tayangan tinggi ($> 1500$) tapi klik $< 2$. Tindakan: Revisi promo/harga.
   4. **PRODUCT_PROBLEM**: Sudah diuji $\ge 3$ kali melintasi seluruh platform aktif dan berbagai sudut pandang namun tetap tidak menghasilkan klik. Tindakan: `STOP_FOR_QUARTER` (Status produk diubah menjadi STOPPED).
 
 ---
 
-## 5. Aturan Khusus Platform Sosial Media & Status Aktivasi Akun
+## 5. Arsitektur Publikasi Dua Fase (Two-Phase State Machine & Idempotency)
+
+*Files: `backend/src/services/threadsService.js` & `backend/src/services/postService.js`*
+
+Untuk mencegah eksekusi rapuh atau pengiriman balasan ganda saat jaringan *timeout*, sistem menggunakan mesin status dua fase:
+
+```text
+[Draf Post Terjadwal] ──► [FASE 1: Publish Root Post]
+                                    │
+                        ┌───────────┴───────────┐
+                        ↓ (Sukses)              ↓ (Gagal)
+                [ROOT_PUBLISHED]          [ROOT_FAILED] (Bisa di-retry)
+                        │
+             [first_reply.enabled?]
+                        │
+            ┌───────────┴───────────┐
+            ↓ (Ya)                  ↓ (Tidak)
+[FASE 2: Publish First Reply]   [Selesai]
+(reply_to_id = root_post_id)
+            │
+    ┌───────┴───────┐
+    ↓ (Sukses)      ↓ (Gagal)
+[REPLY_PUBLISHED] [REPLY_FAILED] (Catat error, root tetap aman)
+```
+
+- **Idempotency Guard**: Sebelum memanggil `publishThreadsReply()`, sistem memeriksa apakah `first_reply.status === 'published'` dan `first_reply.reply_id` sudah ada. Jika sudah ada, balasan tidak akan diposting ulang.
+- **Primary Attribution**: Metrik performa dan klik dipetakan langsung dari relasi `product_id` dan `reply_id` di database, dengan regex sebagai *secondary fallback*.
+
+---
+
+## 6. Aturan Khusus Platform Sosial Media & Status Aktivasi Akun
 
 > [!IMPORTANT]
 > **ATURAN WAJIB PENGEMBANGAN: SELALU FILTER AKUN AKTIF (`is_active == 1`)**
 > Jangan pernah menuliskan array platform statis seperti `['facebook', 'instagram', 'threads']` dalam kode pengambil keputusan. Selalu periksa `social_accounts` yang aktif di database pengguna!
 
-| Platform | Dukungan Link Caption | Batasan Karakter | Perlakuan Autopilot |
+| Platform | Penempatan Link | Batasan Karakter | Perlakuan Autopilot |
 | :--- | :--- | :--- | :--- |
-| **Facebook Page** | ✅ Ya (Bisa diklik langsung) | Bebas (Rekomendasi 200–600 karakter) | **Target Utama Autopilot**. Mendukung gambar feed, video, dan Facebook Reels. |
-| **Threads** | ✅ Ya (Bisa diklik langsung) | **Maksimal 500 karakter** (Sistem memangkas aman di 480 karakter) | **Target Utama Autopilot**. Format ringkas, punchy, 2 bullet point, dan 2-3 hashtag. |
-| **Instagram** | ❌ Tidak (Teks caption tidak bisa diklik) | 2200 karakter | **Dikecualikan dari Autopilot Link Caption**. Digunakan untuk posting manual via Post Composer / AI Generator. |
-| **Telegram** | ✅ Ya (Bot broadcast & webhook) | 4096 karakter | Digunakan untuk Laporan Kinerja Harian & Notifikasi Eksekusi Agen. |
+| **Facebook Page** | ✅ Langsung di Caption | Bebas (Rekomendasi 200–600 karakter) | **Target Utama Autopilot**. Storytelling mengalir, gambar feed, video, dan Reels. |
+| **Threads** | ✅ Auto First-Reply (`reply_to_id`) | Target 150–350 karakter (Maksimal API 500) | **Target Utama Autopilot**. Caption percakapan bersih tanpa tumpukan hashtag, link disajikan di komentar balasan pertama. |
+| **Instagram** | ❌ Teks caption tidak bisa diklik | 2200 karakter | **Dikecualikan dari Autopilot Link Caption**. Digunakan untuk posting manual via Post Composer / AI Generator. |
+| **Telegram** | ✅ Bot broadcast & webhook | 4096 karakter | Digunakan untuk Laporan Kinerja Harian & Notifikasi Eksekusi Agen. |
 
 ---
 
-## 6. Skema Database & Koleksi Firestore
+## 7. Skema Database & Koleksi Firestore
 
-### 1. `affiliate_products`
+### 1. `posts` (Struktur Dokumen Postingan Terjadwal)
 ```typescript
-interface AffiliateProduct {
+interface PostDocument {
   id: string;
   user_id: string;
   title: string;
-  price: number;
-  original_price?: number;
-  discount?: string;
-  product_url: string;           // URL Shopee asli bersih
-  affiliate_url?: string;        // Link affiliate
-  images: string[];
-  videos: string[];
-  lifecycle_status: 'NEW' | 'TESTING' | 'PROMISING' | 'PROVEN' | 'SCALING' | 'COOLING' | 'STOPPED';
-  used_media_by_platform: {
-    facebook?: string[];         // URL media yang sudah terpakai di FB
-    threads?: string[];          // URL media yang sudah terpakai di Threads
+  content: string;               // Teks root post
+  product_id?: string;
+  cta_type?: 'conversation_cta' | 'curiosity_cta' | 'soft_cta' | 'direct_link_cta' | 'no_cta';
+  status: 'draft' | 'scheduled' | 'posted' | 'failed';
+  
+  // Objek First-Reply (Khusus Threads)
+  first_reply?: {
+    enabled: boolean;
+    text: string;                // Contoh: "Spill link produk di sini ya 👇\n🛒 https://..."
+    product_id: string;
+    affiliate_url: string;
+    status: 'pending' | 'published' | 'failed' | 'skipped';
+    reply_id: string | null;     // ID balasan dari Threads API
+    reply_attempts: number;
+    reply_last_error?: string | null;
+    reply_published_at?: string | null;
   };
-  agent_profile?: {
-    niche: string;
-    target_audience: string;
-    pain_points: string[];
-    usp: string[];
-    recommended_angles: string[];
-  };
-  quarterly_summary?: {
-    current_quarter: string;     // Contoh: "2026-Q3"
-    total_attempts: number;
-    total_views: number;
-    total_clicks: number;
-    avg_ctr_percent: number;
-  };
+
+  targets: Array<{
+    id: string;
+    account_id: string;
+    platform: 'facebook' | 'threads';
+    page_name: string;
+    status: 'pending' | 'processing' | 'success' | 'failed';
+    post_id_on_platform?: string | null; // root_post_id
+    error_message?: string | null;
+    attempt_count: number;
+  }>;
 }
 ```
 
@@ -281,6 +320,8 @@ interface ProductPostMemory {
   product_id: string;
   user_id: string;
   quarter: string;
+  post_id_on_platform?: string;  // ID root post
+  reply_id_on_platform?: string; // ID first reply
   context_at_post: {
     platform: 'facebook' | 'threads';
     account_name: string;
@@ -304,42 +345,26 @@ interface ProductPostMemory {
 }
 ```
 
-### 3. `knowledge_insights`
+### 3. `threads_post_context`
 ```typescript
-interface KnowledgeInsight {
-  id: string;                    // ins_peak_hour_facebook, ins_angle_...
+interface ThreadsPostContext {
+  id: string;                    // ctx_{thread_root_id}
+  account_id: string;
+  thread_id: string;             // Root Thread ID
+  reply_id?: string | null;      // First Reply ID
+  post_id: string;
   user_id: string;
-  platform: string;
-  insight_type: 'peak_hour_preference' | 'copy_angle_preference';
-  finding: string;
-  recommended_action: string;
-  data_summary: {
-    optimal_hour?: number;
-    optimal_session?: 'Pagi' | 'Siang' | 'Malam';
-    ctr_percent: number;
-    sample_count: number;
-  };
-  confidence: 'preliminary' | 'medium' | 'high';
-}
-```
-
-### 4. `agent_decisions_log`
-```typescript
-interface AgentDecisionLog {
-  id: string;
-  user_id: string;
-  decision_type: 'MEDIA_SELECTION' | 'DIAGNOSTIC_ANALYSIS' | 'QUARTER_LIFECYCLE' | 'EXPERIMENT_EVALUATION' | 'PRODUCT_PROFILING';
   product_id: string;
-  summary: string;
-  reasoning: string;
-  metadata: object;
-  created_at: string;
+  caption: string;
+  first_reply?: string;
+  published_at: string;
+  status: 'ACTIVE' | 'ARCHIVED';
 }
 ```
 
 ---
 
-## 7. Background Worker, Throttling & Cron Lifecycle
+## 8. Background Worker, Throttling & Cron Lifecycle
 
 Worker dijalankan melalui `backend/src/workers/scheduler.js`. Endpoint ini dipanggil setiap menit oleh Google Apps Script atau penyedia Cron eksternal.
 
@@ -349,18 +374,16 @@ Worker dijalankan melalui `backend/src/workers/scheduler.js`. Endpoint ini dipan
      ┌─────────────────────────────────┴─────────────────────────────────┐
      ↓ (Setiap Menit)                                                    ↓ (Serverless Throttling via 'scheduler_locks')
 Fast-Path Publisher:                                               1. Inbound Threads Scan (Setiap 10m)
-Kirim postingan terjadwal                                          2. Autonomous Cycle Scheduler (Setiap 15m)
+Kirim postingan terjadwal & first reply                            2. Autonomous Cycle Scheduler (Setiap 15m)
 yang scheduled_at <= now                                           3. Analytics Sync Meta & Shortlinks (Setiap 30m)
                                                                    4. Outbound Social Listening (Setiap 30m)
                                                                    5. Token Auto-Refresh (Setiap 12h)
                                                                    6. Telegram Daily Performance Report (Pukul 08:00 WIB)
 ```
 
-Untuk menjamin eksekusi aman pada environment serverless (seperti Vercel), semua penanda waktu eksekusi disimpan di dokumen Firestore: `system_state/scheduler_locks`.
-
 ---
 
-## 8. Katalog REST API Endpoints
+## 9. Katalog REST API Endpoints
 
 Semua endpoint agen berada di bawah rute `/api/agent-orchestrator` dan mewajibkan autentikasi JWT:
 
@@ -379,31 +402,19 @@ Semua endpoint agen berada di bawah rute `/api/agent-orchestrator` dan mewajibka
 
 ---
 
-## 9. Prinsip Emas Pengembangan & Troubleshooting Developer
-
-Untuk mencegah *bug* regresi, putusnya saluran data, atau perilaku tak terduga di masa mendatang, ikuti aturan emas berikut:
+## 10. Prinsip Emas Pengembangan & Troubleshooting Developer
 
 ### 1. Jangan Pernah Asumsikan Platform Tersedia (No Hardcoded Platforms)
-- ❌ **SALAH**: `const platforms = ['facebook', 'instagram', 'threads'];`
-- ✅ **BENAR**: Selalu ambil dari database:
-  ```javascript
-  const accountsSnap = await db.collection('social_accounts')
-    .where('user_id', '==', userId)
-    .where('is_active', 'in', [1, true, '1'])
-    .get();
-  const activePlatforms = Array.from(new Set(
-    accountsSnap.docs.map(d => d.data().platform).filter(p => ['facebook', 'threads'].includes(p))
-  ));
-  ```
+- Selalu ambil dari database `social_accounts` dengan filter `is_active in [1, true, '1']`.
 
-### 2. Validasi Tautan Sebelum Menjadwalkan
-- Jangan pernah menjadwalkan produk yang `product_url` atau `affiliate_url`-nya kosong atau tidak mengandung ID Shopee yang valid (`cleanShopeeProductUrl` / `getValidShopeeProductUrl`).
+### 2. Pisahkan Siklus Root Post dan First Reply (Two-Phase Contract)
+- Jangan gabungkan posting root dan balasan dalam operasi tunggal yang rapuh. Gunakan `publishThreadsPost()` dan `publishThreadsReply()`, serta catat status masing-masing di dokumen `posts.first_reply`.
 
-### 3. Jaga Batas Karakter Threads API
-- Meta Threads API membatasi teks maksimal 500 karakter. Pastikan draf caption Threads selalu dipangkas aman pada maksimal 480 karakter dengan mempertahankan link pendek CTA di bagian akhir.
+### 3. Jaga Idempotency pada Auto-Reply
+- Selalu periksa `post.first_reply.status === 'published'` sebelum mengirim balasan agar retry scheduler tidak mengirimkan komentar berulang.
 
-### 4. Jangan Matikan Loop Tertutup (Closed-Loop Sync)
-- Ketika postingan dipublikasikan, simpan ID postingan platform (`post_id_on_platform`) ke dalam target array postingan agar saat `syncService` berjalan, data analitik dari Meta API dapat dipetakan kembali ke ID produk yang tepat di `product_post_memory`.
+### 4. Jadikan Database ID sebagai Sumber Kebenaran Utama Attribution
+- Petakan metrik dari `threads_post_context` dan `posts.first_reply.product_id` langsung ke buku besar memori. Regex hanya berfungsi sebagai *fallback*.
 
 ---
-*Dokumentasi ini dibuat dan disinkronkan untuk repositori `medsos Agent`.*
+*Dokumentasi ini telah diperbarui dan disinkronkan dengan seluruh pembaruan arsitektur terkini untuk repositori `medsos Agent`.*
