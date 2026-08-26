@@ -133,6 +133,7 @@ async function callXKiroAPI({
   userPrompt,
   imageUrl,
   videoUrl,
+  model,
   temperature = 0.7,
   maxTokens = 600,
   jsonMode = false
@@ -164,7 +165,7 @@ async function callXKiroAPI({
   }
 
   const payload = {
-    model: env.xkiroModel || 'ox-alpha',
+    model: model || env.xkiroModel || 'ox-alpha',
     messages,
     temperature,
     max_tokens: maxTokens,
@@ -323,11 +324,86 @@ async function analyzeImageWithMistral({ imageUrl, prompt, systemPrompt = '', ma
 }
 
 /**
- * Unified AI Caller dengan Hierarki Failover Bertingkat:
- * 1. Tier 1 (Utama): xKiro AI (Ox Alpha - jika XKIRO_API_KEY diisi)
- * 2. Tier 2 (Cadangan Utama / Vision): Mistral AI (mistral-small-latest)
- * 3. Tier 3 (Cadangan Cepat): Groq AI Multi-Key (openai/gpt-oss-120b / 20b)
- * 4. Tier 4 (Emergency): Structured Local Fallback
+ * Dedicated Copywriting AI Caller dengan Failover Chain Bertingkat:
+ * 1. Tier 1 (PAYG Flagship): x-ai/grok-4.6 (Karakter paling organik & punchy)
+ * 2. Tier 2 (Free Top 1): qwen/qwen3.8-max:free (Arena #11, Creative & Unit-Price Reasoning)
+ * 3. Tier 3 (Free Top 2): deepseek/deepseek-v4-pro (Arena Creative #6, Storytelling Persona)
+ * 4. Tier 4 (Free Top 3): qwen/qwen3-max:free (Qwen3 Max Backup)
+ * 5. Tier 5 (Free Alternatives): mistralai/mistral-medium-3.5 -> minimax/minimax-m2.7-highspeed -> deepseek/deepseek-v4-flash
+ * 6. Tier 6 (Safety Net): Groq AI Multi-Key (gpt-oss-120b) -> Mistral Direct (mistral-small-latest)
+ */
+async function callCopywritingAI(options = {}) {
+  const {
+    systemPrompt = '',
+    userPrompt = '',
+    temperature = 0.8,
+    maxTokens = 600,
+    jsonMode = false,
+  } = options;
+
+  return globalAIQueue.enqueue(async () => {
+    // 1. Coba model-model unggulan dari xKiro API
+    if (env.xkiroApiKey) {
+      const copywritingModels = [
+        'x-ai/grok-4.6',                   // Tier 1: PAYG Flagship
+        'qwen/qwen3.8-max:free',           // Tier 2: FREE Top 1 (Creative & Value Shock)
+        'deepseek/deepseek-v4-pro',        // Tier 3: FREE Top 2 (Deep Reasoning & Relatable Story)
+        'qwen/qwen3-max:free',             // Tier 4: FREE Top 3 (Stable Baseline)
+        'mistralai/mistral-medium-3.5',    // Tier 5a: Mistral Medium 3.5
+        'minimax/minimax-m2.7-highspeed',  // Tier 5b: MiniMax M2.7 Highspeed
+        'deepseek/deepseek-v4-flash',      // Tier 5c: DeepSeek V4 Flash
+      ];
+
+      for (const model of copywritingModels) {
+        try {
+          const res = await callXKiroAPI({
+            systemPrompt,
+            userPrompt,
+            model,
+            temperature,
+            maxTokens,
+            jsonMode
+          });
+          if (res) return res;
+        } catch (modelErr) {
+          const errMsg = modelErr.response?.data?.error?.message || modelErr.message;
+          console.warn(`[callCopywritingAI] Model ${model} dilewati (${errMsg}). Mengalihkan ke tier berikutnya...`);
+        }
+      }
+    }
+
+    // 2. Fallback ke Groq AI Multi-Key (3 API Keys LPU Rotator)
+    try {
+      return await callGroqAPI({ systemPrompt, userPrompt, temperature, maxTokens, jsonMode });
+    } catch (groqErr) {
+      console.warn(`[callCopywritingAI] Groq Multi-Key gagal: ${groqErr.message}. Mengalihkan ke Mistral Direct...`);
+    }
+
+    // 3. Fallback ke Mistral Direct (mistral-small-latest)
+    try {
+      return await callMistralDirect({ systemPrompt, userPrompt, temperature, maxTokens, jsonMode });
+    } catch (mistralErr) {
+      console.warn(`[callCopywritingAI] Mistral Direct gagal: ${mistralErr.message}`);
+    }
+
+    // 4. Emergency Fallback
+    if (jsonMode) {
+      return JSON.stringify({
+        hook: 'JAMAN SERBA MAHAL GINI 😭 nemu barang sebagus ini harganya aman di dompet',
+        body_insight: 'Bikin aktivitas harian jadi lebih simpel dan effortless',
+        usp_bullets: '• Kualitas original terbaik\n• Bikin aman dompet\n• Terbukti bermanfaat',
+        cta_type: 'soft_cta',
+        cta_text: 'detailnya aku spill di reply ya 👇',
+        first_reply_intro: 'Spill link produk aslinya di sini ya 👇'
+      });
+    }
+
+    return 'Rekomendasi produk pilihan terbaik di Shopee dengan harga promo spesial!';
+  });
+}
+
+/**
+ * Unified AI Caller untuk Profiling, Diagnosa, dan Metadata (Groq / Mistral / Ox Alpha)
  */
 async function callUnifiedAI(options = {}) {
   const {
@@ -369,10 +445,13 @@ async function callUnifiedAI(options = {}) {
     // 4. Tier 4: Emergency Fallback
     if (jsonMode) {
       return JSON.stringify({
-        hook: 'Rekomendasi racun shopee yang wajib kamu punya! ✨',
-        pain_point_text: 'Bikin aktivitas harian jadi lebih simpel dan praktis',
-        usp_bullets: '• Kualitas original terbaik\n• Promo terbatas\n• Terbukti bermanfaat',
-        hashtags: '#RacunShopee #ShopeeAffiliate #PromoSpesial'
+        niche: 'Universal',
+        target_audience: 'Pembeli Online Indonesia',
+        pain_points: ['Mencari produk berkualitas harga terjangkau'],
+        usp: ['Original', 'Harga Terjangkau', 'Pengiriman Cepat'],
+        price_tier: 'Mid-Range',
+        recommended_angles: ['Problem-Agitate-Solution', 'Honest Review'],
+        key_features_summary: 'Produk rekomendasi pilihan terbaik di Shopee'
       });
     }
 
@@ -390,6 +469,7 @@ async function callMistralAI(options) {
 module.exports = {
   globalAIQueue,
   callUnifiedAI,
+  callCopywritingAI,
   callMistralAI,
   callXKiroAPI,
   callMistralDirect,

@@ -15,7 +15,19 @@ import {
   Send,
   Bot,
   Power,
+  Tag,
 } from 'lucide-react';
+
+const CANONICAL_NICHES = [
+  { id: 'UNIVERSAL', label: 'Universal (Semua Niche)' },
+  { id: 'GADGET_AUDIO', label: 'Gadget & Audio' },
+  { id: 'FASHION_WOMEN', label: 'Fashion Wanita' },
+  { id: 'FASHION_MEN', label: 'Fashion Pria' },
+  { id: 'BEAUTY_SKINCARE', label: 'Kecantikan & Skincare' },
+  { id: 'HOME_LIVING', label: 'Perlengkapan Rumah & Dapur' },
+  { id: 'MOM_BABY', label: 'Ibu & Bayi' },
+  { id: 'AUTOMOTIVE', label: 'Otomotif & Aksesoris' }
+];
 
 export default function AccountManager() {
   const [accounts, setAccounts] = useState([]);
@@ -26,9 +38,13 @@ export default function AccountManager() {
   const [pageId, setPageId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [igAccountId, setIgAccountId] = useState('');
+  const [allowedNiches, setAllowedNiches] = useState(['UNIVERSAL']);
+  const [threadsMediaMode, setThreadsMediaMode] = useState('auto');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [editingNichesId, setEditingNichesId] = useState(null);
+  const [editingThreadsModeId, setEditingThreadsModeId] = useState(null);
 
   const [refreshingTokens, setRefreshingTokens] = useState(false);
 
@@ -86,6 +102,8 @@ export default function AccountManager() {
         page_id: pageId,
         access_token: accessToken || 'demo_manual_token_mock',
         ig_account_id: platform === 'instagram' ? igAccountId : null,
+        allowed_niches: allowedNiches.length > 0 ? allowedNiches : ['UNIVERSAL'],
+        threads_media_mode: platform === 'threads' ? threadsMediaMode : 'auto',
       });
 
       setMessage({ type: 'success', text: 'Akun berhasil ditambahkan!' });
@@ -94,11 +112,34 @@ export default function AccountManager() {
       setPageId('');
       setAccessToken('');
       setIgAccountId('');
+      setAllowedNiches(['UNIVERSAL']);
+      setThreadsMediaMode('auto');
       fetchAccounts();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Gagal menambahkan akun.' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateThreadsMediaMode = async (id, newMode) => {
+    try {
+      await api.put(`/accounts/${id}`, { threads_media_mode: newMode });
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, threads_media_mode: newMode } : a));
+      setEditingThreadsModeId(null);
+    } catch (err) {
+      alert('Gagal memperbarui mode media Threads: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleUpdateNiches = async (id, newNiches) => {
+    const canonical = (!newNiches || newNiches.length === 0) ? ['UNIVERSAL'] : newNiches;
+    try {
+      await api.put(`/accounts/${id}`, { allowed_niches: canonical });
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, allowed_niches: canonical } : a));
+      setEditingNichesId(null);
+    } catch (err) {
+      alert('Gagal memperbarui niche akun: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -314,8 +355,146 @@ export default function AccountManager() {
                     </p>
                   )}
 
+                  {/* Niche Alignment Badges & Quick Selector */}
+                  <div className="mt-3 pt-3 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                        <Tag className="w-3 h-3 text-indigo-400" /> Niche Akun:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingNichesId(editingNichesId === acc.id ? null : acc.id)}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold transition-colors"
+                      >
+                        {editingNichesId === acc.id ? 'Tutup' : 'Ubah Niche'}
+                      </button>
+                    </div>
+
+                    {editingNichesId === acc.id ? (
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 animate-in fade-in">
+                        <div className="text-[10px] text-slate-400">Pilih niche yang diizinkan untuk akun ini:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {CANONICAL_NICHES.map(n => {
+                            const isSelected = (acc.allowed_niches || ['UNIVERSAL']).includes(n.id);
+                            return (
+                              <button
+                                key={n.id}
+                                type="button"
+                                onClick={() => {
+                                  let updated = [...(acc.allowed_niches || ['UNIVERSAL'])];
+                                  if (n.id === 'UNIVERSAL') {
+                                    updated = ['UNIVERSAL'];
+                                  } else {
+                                    updated = updated.filter(x => x !== 'UNIVERSAL');
+                                    if (isSelected) {
+                                      updated = updated.filter(x => x !== n.id);
+                                    } else {
+                                      updated.push(n.id);
+                                    }
+                                    if (updated.length === 0) updated = ['UNIVERSAL'];
+                                  }
+                                  handleUpdateNiches(acc.id, updated);
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                                }`}
+                              >
+                                {n.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {(acc.allowed_niches || ['UNIVERSAL']).map(nId => {
+                          const nObj = CANONICAL_NICHES.find(x => x.id === nId);
+                          const isUniv = nId === 'UNIVERSAL';
+                          return (
+                            <span
+                              key={nId}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                                isUniv
+                                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                                  : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30'
+                              }`}
+                            >
+                              {nObj?.label || nId}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Khusus Threads: Pilihan Mode Media Posting */}
+                  {acc.platform === 'threads' && (
+                    <div className="mt-3 pt-3 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                          <AtSign className="w-3 h-3 text-sky-400" /> Mode Posting Threads:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingThreadsModeId(editingThreadsModeId === acc.id ? null : acc.id)}
+                          className="text-[10px] text-sky-400 hover:text-sky-300 font-bold transition-colors"
+                        >
+                          {editingThreadsModeId === acc.id ? 'Tutup' : 'Ubah Mode'}
+                        </button>
+                      </div>
+
+                      {editingThreadsModeId === acc.id ? (
+                        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 animate-in fade-in">
+                          <div className="text-[10px] text-slate-400">Pilih strategi postingan Threads:</div>
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {[
+                              { id: 'auto', label: '🤖 Auto (Mix Visual & Link Card)', desc: 'Prioritaskan media jika ada, fallback ke Link Card' },
+                              { id: 'no_media', label: '🔗 Link Card Preview (Tanpa Media)', desc: 'Teks murni + Link Card Otomatis (Rekomendasi)' },
+                              { id: 'with_media', label: '🖼️ Visual Media Saja', desc: 'Wajib Foto / Video' }
+                            ].map(m => {
+                              const isSelected = (acc.threads_media_mode || 'auto') === m.id;
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => handleUpdateThreadsMediaMode(acc.id, m.id)}
+                                  className={`p-2 rounded-lg text-left border transition-all ${
+                                    isSelected
+                                      ? 'bg-sky-500/20 text-white border-sky-500/50 shadow-sm'
+                                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                                  }`}
+                                >
+                                  <div className="text-[11px] font-bold">{m.label}</div>
+                                  <div className="text-[9px] text-slate-400">{m.desc}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            (acc.threads_media_mode || 'auto') === 'no_media'
+                              ? 'bg-sky-500/15 text-sky-300 border-sky-500/35'
+                              : (acc.threads_media_mode || 'auto') === 'with_media'
+                              ? 'bg-purple-500/15 text-purple-300 border-purple-500/35'
+                              : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35'
+                          }`}>
+                            {(acc.threads_media_mode || 'auto') === 'no_media'
+                              ? '🔗 Link Card Preview (Tanpa Media)'
+                              : (acc.threads_media_mode || 'auto') === 'with_media'
+                              ? '🖼️ Visual Media Saja'
+                              : '🤖 Auto (Mix Visual & Link Card)'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Agent Status Badge Banner */}
-                  <div className={`mt-4 p-2.5 rounded-xl border text-[11px] flex items-center gap-2 transition-all ${
+                  <div className={`mt-3 p-2.5 rounded-xl border text-[11px] flex items-center gap-2 transition-all ${
                     isActive
                       ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
                       : 'bg-slate-800/40 border-slate-800 text-slate-500'
@@ -356,7 +535,7 @@ export default function AccountManager() {
       {/* Add Account Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
               <h3 className="font-bold text-base text-white">Hubungkan Akun Sosmed</h3>
               <button
@@ -469,6 +648,82 @@ export default function AccountManager() {
                   />
                 </div>
               )}
+
+              {platform === 'threads' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Mode Media Threads (AI Autopilot)
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'auto', label: '🤖 Auto Mix', desc: 'Mix Visual & Link Card' },
+                      { id: 'no_media', label: '🔗 Link Card', desc: 'Tanpa Media' },
+                      { id: 'with_media', label: '🖼️ Visual', desc: 'Foto / Video' }
+                    ].map(m => {
+                      const isSel = threadsMediaMode === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setThreadsMediaMode(m.id)}
+                          className={`p-2 rounded-xl text-left border transition-all ${
+                            isSel
+                              ? 'bg-sky-500/20 text-white border-sky-500/60 shadow-sm'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="text-[11px] font-bold">{m.label}</div>
+                          <div className="text-[9px] text-slate-400">{m.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Niche Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Niche yang Diizinkan untuk Akun Ini
+                </label>
+                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {CANONICAL_NICHES.map(n => {
+                      const isSelected = allowedNiches.includes(n.id);
+                      return (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => {
+                            if (n.id === 'UNIVERSAL') {
+                              setAllowedNiches(['UNIVERSAL']);
+                            } else {
+                              let next = allowedNiches.filter(x => x !== 'UNIVERSAL');
+                              if (isSelected) {
+                                next = next.filter(x => x !== n.id);
+                              } else {
+                                next.push(n.id);
+                              }
+                              if (next.length === 0) next = ['UNIVERSAL'];
+                              setAllowedNiches(next);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          {n.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    Pilih <b>Universal</b> jika akun ini boleh memposting produk dari semua kategori/niche.
+                  </p>
+                </div>
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">

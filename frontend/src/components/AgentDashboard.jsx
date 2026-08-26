@@ -18,7 +18,8 @@ import {
   Terminal,
   Calendar,
   Cpu,
-  Trash2
+  Trash2,
+  AtSign
 } from 'lucide-react';
 import api from '../api/client';
 
@@ -28,8 +29,8 @@ export default function AgentDashboard({ setActiveTab }) {
   const [cycleLogs, setCycleLogs] = useState([]);
   const [config, setConfig] = useState(null);
   const [quarterStatus, setQuarterStatus] = useState(null);
-  const [decisions, setDecisions] = useState([]);
   const [insights, setInsights] = useState([]);
+  const [decisions, setDecisions] = useState([]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -38,19 +39,23 @@ export default function AgentDashboard({ setActiveTab }) {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [cfgRes, qRes, decRes, insRes] = await Promise.all([
-        api.get('/agent-orchestrator/config'),
-        api.get('/agent-orchestrator/quarter/status'),
+      const [dashRes, decRes] = await Promise.all([
+        api.get('/agent-orchestrator/dashboard'),
         api.get('/agent-orchestrator/decisions?limit=8'),
-        api.get('/agent-orchestrator/insights'),
       ]);
 
-      if (cfgRes.data.success) setConfig(cfgRes.data.config);
-      if (qRes.data.success) setQuarterStatus(qRes.data);
-      if (decRes.data.success) setDecisions(decRes.data.decisions || []);
-      if (insRes.data.success) setInsights(insRes.data.insights || []);
+      if (dashRes.data.success) {
+        const data = dashRes.data.data;
+        setConfig(data.config);
+        setQuarterStatus(data.quarter_status);
+        setInsights(data.recent_insights || []);
+      }
+
+      if (decRes.data.success) {
+        setDecisions(decRes.data.decisions || []);
+      }
     } catch (err) {
-      console.error('Error fetching agent dashboard data:', err);
+      console.error('Error fetching dashboard data:', err);
     } finally {
       setLoading(false);
     }
@@ -63,6 +68,15 @@ export default function AgentDashboard({ setActiveTab }) {
       setConfig(prev => ({ ...prev, autopilot_enabled: newStatus }));
     } catch (err) {
       console.error('Error toggling autopilot:', err);
+    }
+  };
+
+  const handleUpdateThreadsMediaMode = async (mode) => {
+    try {
+      await api.post('/agent-orchestrator/config', { threads_media_mode: mode });
+      setConfig(prev => ({ ...prev, threads_media_mode: mode }));
+    } catch (err) {
+      console.error('Error updating threads_media_mode config:', err);
     }
   };
 
@@ -289,6 +303,79 @@ export default function AgentDashboard({ setActiveTab }) {
           >
             {config?.autopilot_enabled ? 'Matikan Autopilot' : 'Aktifkan Autopilot'}
           </button>
+        </div>
+      </div>
+
+      {/* Threads Autopilot Strategy Controls */}
+      <div className="p-5 rounded-3xl bg-slate-900/60 border border-slate-800/80 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-black border border-slate-700 flex items-center justify-center text-white">
+              <AtSign className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-200">Strategi Media Threads (AI Autopilot)</h3>
+              <p className="text-[11px] text-slate-400">Tentukan cara Agen AI menerbitkan konten ke akun Meta Threads</p>
+            </div>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/30 font-bold self-start sm:self-auto">
+            Mode Aktif: {(config?.threads_media_mode || 'auto').toUpperCase()}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+          {[
+            {
+              id: 'no_media',
+              title: '🔗 Link Card Preview (Tanpa Media)',
+              badge: 'DIREKOMENDASIKAN',
+              desc: 'Teks murni dengan URL afiliasi di caption. Meta Threads otomatis merender kartu thumbnail, judul, harga, dan rating Shopee interaktif.',
+            },
+            {
+              id: 'auto',
+              title: '🤖 Auto Mix (Adaptif)',
+              badge: 'HYBRID',
+              desc: 'Gunakan foto/video jika produk memiliki media berkualitas tinggi; jika stok media habis, otomatis fallback ke Link Card Preview.',
+            },
+            {
+              id: 'with_media',
+              title: '🖼️ Visual Media Saja',
+              badge: 'CLASSIC',
+              desc: 'Wajib menyertakan foto atau video produk pada setiap postingan Threads. First reply digunakan untuk link afiliasi.',
+            }
+          ].map(opt => {
+            const isSelected = (config?.threads_media_mode || 'auto') === opt.id;
+            return (
+              <div
+                key={opt.id}
+                onClick={() => handleUpdateThreadsMediaMode(opt.id)}
+                className={`cursor-pointer p-3.5 rounded-2xl border flex flex-col justify-between transition-all ${
+                  isSelected
+                    ? 'bg-sky-500/15 border-sky-500/50 shadow-lg shadow-sky-500/5 ring-1 ring-sky-500/40'
+                    : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-xs font-bold text-white">{opt.title}</span>
+                    <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
+                      isSelected
+                        ? 'bg-sky-500/30 text-sky-200 border-sky-400/40'
+                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                    }`}>
+                      {opt.badge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">{opt.desc}</p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
+                  <span className={isSelected ? 'text-sky-400 font-bold' : 'text-slate-500'}>
+                    {isSelected ? '✓ Terpilih Sebagai Default' : 'Klik untuk Aktifkan'}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

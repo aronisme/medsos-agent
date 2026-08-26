@@ -32,10 +32,12 @@ Sistem **AI Autonomous Marketing Agent** dibangun dengan konsep *Closed-Loop Con
 Tujuan utama agen adalah:
 1. **Mengotomatisasi Penuh (0-Touch Autopilot)**: Memilih produk Shopee dari katalog, menyusun materi visual, meracik copywriting berdasarkan sudut pandang terbukti, menjadwalkan ke jam-jam emas (*Peak Golden Hours*), hingga mempublikasikan ke Facebook dan Threads.
 2. **Attribution & Validasi Tautan Ketat**: Setiap postingan menghasilkan *shortlink* unik internal (`/s/:code`) yang diteruskan ke link resmi Shopee Affiliate (`tracking: source, campaign, content`) untuk mendeteksi klik manusia (*human clicks*) secara real-time.
-3. **Pemisahan Konteks Platform (Facebook Caption Link vs Threads First-Reply)**: 
+3. **Pemisahan Konteks Platform (Facebook Caption Link vs Threads Dual-Mode)**: 
    - **Facebook**: Copywriting mendalam dengan tautan langsung di badan caption.
-   - **Threads**: Copywriting bergaya percakapan santai (*conversation-first*), bebas dari tumpukan hashtag tradisional (*clean policy*), dan tautan afiliasi disajikan otomatis pada **balasan/komentar pertama (*first reply*)** menggunakan `reply_to_id`.
-4. **Mencegah Polusi Akun (Anti-Duplicate & Fresh Media)**: Agen menjamin tidak ada foto/video yang dipakai berulang pada platform yang sama, serta menolak teks yang memiliki kemiripan semantik $> 85\%$.
+   - **Threads (Dual-Mode)**:
+     - **Mode 1: Visual Media + First-Reply**: Copywriting santai tanpa hashtag, media foto/video terlampir, dan tautan afiliasi disajikan otomatis pada **balasan/komentar pertama (*first reply*)** menggunakan `reply_to_id`.
+     - **Mode 2: No-Media + Native Link Card Preview**: Postingan teks murni dengan tautan pendek langsung di caption. Crawler Meta Threads secara otomatis merender kartu thumbnail, judul, harga, dan rating Shopee interaktif (*0-media upload*), dengan `first_reply` dinonaktifkan otomatis.
+4. **Niche-Aligned Delivery & Anti-Pollution**: Agen memvalidasi kesesuaian kategori produk dengan `allowed_niches` pada akun, menjamin tidak ada foto/video yang dipakai berulang pada platform yang sama, serta menolak teks yang memiliki kemiripan semantik $> 85\%$.
 5. **Lifecycle Governance (Quarterly Stop)**: Agen secara proaktif mendiagnosis produk yang berkinerja buruk dan mengistirahatkannya (`STOP_FOR_QUARTER`) agar slot posting dialokasikan ke produk berpotensi tinggi.
 
 ---
@@ -55,21 +57,24 @@ flowchart TD
         D -->|AI Extraction| E[Niche, Target Persona, Pain Points, USP]
     end
 
-    subgraph SCHEDULER["3. Prime-Time Grid Scheduler"]
+    subgraph SCHEDULER["3. Prime-Time Grid Scheduler & Niche Filter"]
         E --> F[orchestratorService]
         G[knowledge_insights] -->|Jam Emas WIB| F
-        H[social_accounts WHERE is_active=1] -->|Akun Aktif| F
+        H[social_accounts WHERE is_active=1] -->|Cek allowed_niches & threads_media_mode| F
     end
 
     subgraph CONTENT_GEN["4. Visual & Dual-Engine Copywriting"]
         F --> I[mediaEvaluatorService]
-        I -->|Cek used_media_by_platform| J[Max 2 Foto Segar / 1 Video Demo]
+        I -->|Cek used_media_by_platform| J{threads_media_mode == no_media OR Media Habis?}
+        J -- Ya di Threads --> J1[Mode Teks Murni: media=[] link_preview_ready]
+        J -- Tidak --> J2[Max 2 Foto Segar / 1 Video Demo]
         F --> K[templateService: Multi-Armed Bandit]
         K -->|80% Top CTR / 20% Explore| L[Template Terpilih]
-        J & L --> M[copywritingService: Facebook Prompt vs Threads Prompt]
-        M -->|Threads Dual-Output| N1[Caption Root Post + First Reply Object]
-        M -->|Facebook Single-Output| N2[Caption dengan Tautan Langsung]
-        N1 & N2 --> O[contentFingerprint]
+        J1 & J2 & L --> M[copywritingService: Facebook vs Threads Dual-Mode]
+        M -->|Threads No-Media| N1[Caption memuat Link + first_reply.enabled=false]
+        M -->|Threads With-Media| N2[Caption percakapan + first_reply.enabled=true]
+        M -->|Facebook Single-Output| N3[Caption dengan Tautan Langsung]
+        N1 & N2 & N3 --> O[contentFingerprint]
         O -->|Similarity < 85%| P[Simpan ke Koleksi posts status=scheduled]
         O -->|Similarity >= 85%| Q[Reject & Kocok Ulang]
     end
@@ -79,7 +84,7 @@ flowchart TD
         R --> S1[Phase 1: publishThreadsPost / postToFacebook]
         S1 -->|Simpan root_post_id| S2{first_reply.enabled?}
         S2 -- Ya --> S3[Phase 2: publishThreadsReply reply_to_id]
-        S2 -- Tidak --> S4[Selesai Publikasi]
+        S2 -- Tidak --> S4[Selesai Publikasi / Link Card Rendered by Meta]
         S3 & S4 --> T[Shortlink Redirect & Human Click Tracker]
         T & S1 --> U[syncService.js: Tarik Views & Clicks via Database ID]
         U --> V[product_post_memory Ledger]
@@ -104,9 +109,9 @@ backend/src/
 │   ├── agent/
 │   │   ├── orchestratorService.js      # Otak orkestrator siklus otonom, alokasi slot dinamis & inventory
 │   │   ├── productIntelligenceService.js# Ekstraksi persona, pain points, & USP dari Shopee
-│   │   ├── mediaEvaluatorService.js    # Filter media anti-reuse per platform (max 2 foto / 1 video)
+│   │   ├── mediaEvaluatorService.js    # Filter media anti-reuse per platform + no-media fallback Threads
 │   │   ├── templateService.js          # Pustaka template & Contextual Multi-Armed Bandit (MAB)
-│   │   ├── copywritingService.js       # Generator copy (Facebook Storytelling vs Threads Conversation-First)
+│   │   ├── copywritingService.js       # Generator copy (Facebook Storytelling vs Threads Dual-Mode)
 │   │   ├── contentFingerprint.js       # Kalkulator kemiripan teks (Levenshtein / Jaccard / Cosine)
 │   │   ├── productPostMemoryService.js # Buku besar memori postingan (product_post_memory) & skor dekomposisi
 │   │   ├── metricsCalculator.js        # Kalkulasi CTR, skor normalisasi, & evaluasi A/B testing
@@ -133,7 +138,7 @@ backend/src/
 │   └── scheduler.js                    # Worker tunggal berkala (Cron / Google Apps Script trigger)
 └── routes/
     ├── agent-orchestrator.js           # REST API kontrol agen, status kuartal, & log keputusan
-    ├── accounts.js                     # CRUD akun sosial media & toggle aktivasi (is_active)
+    ├── accounts.js                     # CRUD akun sosial media, allowed_niches & threads_media_mode
     ├── affiliate.js & redirect.js      # Builder Shopee Affiliate & Shortlink Handler (/s/:code)
     └── affiliate-products.js           # CRUD inventori produk Shopee
 ```
@@ -165,8 +170,11 @@ backend/src/
 - **Aturan Ketat**:
   1. Media yang **sudah pernah diposting pada platform tertentu (misal: Facebook)** disimpan pada `used_media_by_platform.facebook` dan **dilarang dipakai lagi di Facebook**.
   2. Media tersebut **tetap boleh dipakai di platform lain (misal: Threads)** jika belum pernah digunakan di Threads.
-  3. Maksimal **1 Video Demo Segar** ATAU Maksimal **2 Foto Produk Bersih** per postingan.
-  4. Jika semua media produk sudah habis terpakai pada platform tersebut, agen menolak kurasi (`no_fresh_media: true`) dan memilih produk lain.
+  3. Maksimal **1 Video Demo Segar** ATAU Maksimal **2 Foto Produk Bersih** per postingan visual.
+  4. **Penanganan Khusus Threads (Native Link Card Preview Fallback)**:
+     - Jika mode akun/autopilot disetel ke `threadsMediaMode = 'no_media'`, atau jika stok foto/video segar produk telah habis di Threads, kurasi media mengembalikan `{ media_type: 'text', selected_media: [], no_fresh_media: false }`.
+     - Produk tidak digagalkan/di-reject, melainkan diterbitkan dalam mode Teks Murni ber-link yang secara native memicu crawler Meta Threads untuk membuat kartu preview interaktif (*Link Card Preview*).
+  5. Pada Facebook/Instagram, jika media habis, agen menolak kurasi (`no_fresh_media: true`) dan memilih produk lain.
 
 ---
 
@@ -177,14 +185,17 @@ backend/src/
   - **20% Eksplorasi**: Memilih template alternatif/baru secara acak untuk mencegah kejenuhan audiens.
 - **Kebijakan Gaya Penulisan Threads (Clean & Conversation-First)**:
   - **Zero Hashtag Clutter**: Menghilangkan tumpukan hashtag tradisional (`#Shopee #RacunShopee` ditiadakan) agar teks tampil natural seperti percakapan organik.
-  - **5 Kelas CTA Dinamis**:
+  - **6 Kelas CTA Dinamis**:
     1. `conversation_cta`: Memantik opini / pertanyaan santai (*"menurut kalian mending peach apa matcha?"*).
     2. `curiosity_cta`: Memancing penasaran (*"ternyata yang termurah justru yang ini 😭"*).
     3. `soft_cta`: Menawarkan link secara halus (*"detailnya aku spill di reply ya 👇"*).
     4. `direct_link_cta`: Ajakan link langsung (*"yang nanya link, aku drop di bawah 👇"*).
-    5. `no_cta`: Tanpa CTA sama sekali (murni relatable sharing / humor).
+    5. `link_card_cta`: CTA khusus mode Link Card Preview tanpa first reply (*"Cek promo obralnya langsung di link ini 🛒"*).
+    6. `no_cta`: Tanpa CTA sama sekali (murni relatable sharing / humor).
   - **Panjang Teks Fleksibel**: Target gaya 150–350 karakter (maksimal aman API < 480 karakter).
-  - **Dual-Output**: Menghasilkan `caption` (postingan utama) dan `first_reply_text` (teks komentar balasan pertama yang memuat link afiliasi).
+  - **Dual-Output**:
+    - **Mode With-Media**: Menghasilkan `caption` (postingan utama) dan `first_reply_text` (teks komentar balasan pertama yang memuat link afiliasi).
+    - **Mode No-Media**: Menghasilkan `caption` yang memuat tautan pendek langsung, dengan `first_reply_text = ''` (dinonaktifkan).
 
 ---
 
@@ -195,10 +206,11 @@ backend/src/
 
 ---
 
-### Pilar 5: Dynamic Prime-Time Grid Scheduler
+### Pilar 5: Dynamic Prime-Time Grid Scheduler & Niche Alignment
 *File: `backend/src/services/agent/orchestratorService.js`*
 - **Struktur Slot Harian**: 3 Sesi Utama (Pagi, Siang, Malam) dengan 3 Slot per Sesi (Total 9 slot prime-time per hari per akun).
 - **Penyesuaian Jam Emas (Learned Golden Peak)**: Jika modul pembelajaran (`knowledgeSynthesizer`) mendeteksi bahwa Sesi Malam memiliki CTR tertinggi, agen secara dinamis mengalokasikan 5 slot padat di sekitar jam emas tersebut (`is_golden_peak: true`) dan memprioritaskan produk **PROVEN / Pemenang**.
+- **Validasi Niche Akun (`allowed_niches`)**: Agen memeriksa apakah niche produk termasuk dalam `allowed_niches` milik akun target. Jika akun disetel ke niche spesifik (misal `FASHION`), akun tersebut tidak akan dipasangi produk `ELEKTRONIK` kecuali disetel `UNIVERSAL`.
 
 ---
 
@@ -244,8 +256,8 @@ Untuk mencegah eksekusi rapuh atau pengiriman balasan ganda saat jaringan *timeo
              [first_reply.enabled?]
                         │
             ┌───────────┴───────────┐
-            ↓ (Ya)                  ↓ (Tidak)
-[FASE 2: Publish First Reply]   [Selesai]
+            ↓ (Ya: Mode Media)      ↓ (Tidak: Mode No-Media)
+[FASE 2: Publish First Reply]   [Selesai Publikasi / Link Card Rendered by Meta]
 (reply_to_id = root_post_id)
             │
     ┌───────┴───────┐
@@ -267,7 +279,7 @@ Untuk mencegah eksekusi rapuh atau pengiriman balasan ganda saat jaringan *timeo
 | Platform | Penempatan Link | Batasan Karakter | Perlakuan Autopilot |
 | :--- | :--- | :--- | :--- |
 | **Facebook Page** | ✅ Langsung di Caption | Bebas (Rekomendasi 200–600 karakter) | **Target Utama Autopilot**. Storytelling mengalir, gambar feed, video, dan Reels. |
-| **Threads** | ✅ Auto First-Reply (`reply_to_id`) | Target 150–350 karakter (Maksimal API 500) | **Target Utama Autopilot**. Caption percakapan bersih tanpa tumpukan hashtag, link disajikan di komentar balasan pertama. |
+| **Threads** | ✅ Dual-Mode (Caption Link Card Preview ATAU First-Reply) | Target 150–350 karakter (Maksimal API 500) | **Target Utama Autopilot**. Mendukung posting visual dengan first-reply, atau posting teks murni dengan Link Card Preview native Meta. |
 | **Instagram** | ❌ Teks caption tidak bisa diklik | 2200 karakter | **Dikecualikan dari Autopilot Link Caption**. Digunakan untuk posting manual via Post Composer / AI Generator. |
 | **Telegram** | ✅ Bot broadcast & webhook | 4096 karakter | Digunakan untuk Laporan Kinerja Harian & Notifikasi Eksekusi Agen. |
 
@@ -283,12 +295,12 @@ interface PostDocument {
   title: string;
   content: string;               // Teks root post
   product_id?: string;
-  cta_type?: 'conversation_cta' | 'curiosity_cta' | 'soft_cta' | 'direct_link_cta' | 'no_cta';
+  cta_type?: 'conversation_cta' | 'curiosity_cta' | 'soft_cta' | 'direct_link_cta' | 'link_card_cta' | 'no_cta';
   status: 'draft' | 'scheduled' | 'posted' | 'failed';
   
-  // Objek First-Reply (Khusus Threads)
+  // Objek First-Reply (Khusus Threads Mode With-Media)
   first_reply?: {
-    enabled: boolean;
+    enabled: boolean;            // false jika Threads no_media
     text: string;                // Contoh: "Spill link produk di sini ya 👇\n🛒 https://..."
     product_id: string;
     affiliate_url: string;
@@ -312,7 +324,21 @@ interface PostDocument {
 }
 ```
 
-### 2. `product_post_memory`
+### 2. `social_accounts` (Akun Terhubung & Preferensi Mode)
+```typescript
+interface SocialAccountDocument {
+  id: string;
+  user_id: string;
+  platform: 'facebook' | 'instagram' | 'threads' | 'telegram';
+  page_name: string;
+  page_id: string;
+  is_active: boolean | number;
+  allowed_niches: string[];      // ['UNIVERSAL'] atau ['FASHION', 'BEAUTY']
+  threads_media_mode?: 'auto' | 'no_media' | 'with_media'; // Khusus Threads
+}
+```
+
+### 3. `product_post_memory`
 ```typescript
 interface ProductPostMemory {
   id: string;                    // mem_{post_id}
@@ -345,7 +371,7 @@ interface ProductPostMemory {
 }
 ```
 
-### 3. `threads_post_context`
+### 4. `threads_post_context`
 ```typescript
 interface ThreadsPostContext {
   id: string;                    // ctx_{thread_root_id}

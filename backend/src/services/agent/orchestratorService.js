@@ -11,6 +11,49 @@ const { createExperiment, attachPostToExperiment } = require('./experimentServic
 const { syncAllPostsAnalytics } = require('../postAnalytics/syncService');
 const crypto = require('crypto');
 
+const CANONICAL_NICHES = {
+  UNIVERSAL: { id: 'UNIVERSAL', label: 'Universal / Campuran', keywords: [] },
+  GADGET_AUDIO: { id: 'GADGET_AUDIO', label: 'Gadget & Audio', keywords: ['gadget', 'audio', 'tws', 'headset', 'elektronik', 'hp', 'phone', 'charger', 'kabel', 'bluetooth', 'speaker', 'laptop', 'mouse', 'keyboard'] },
+  FASHION_WOMEN: { id: 'FASHION_WOMEN', label: 'Fashion Wanita', keywords: ['wanita', 'dress', 'blouse', 'rok', 'hijab', 'gamis', 'tas', 'sepatu', 'cardigan', 'crop', 'outer', 'kulot', 'tunik', 'heels'] },
+  FASHION_MEN: { id: 'FASHION_MEN', label: 'Fashion Pria', keywords: ['pria', 'men', 'kaos', 'kemeja', 'hoodie', 'celana', 'dompet', 'sepatu pria', 'sneakers', 'jam tangan'] },
+  BEAUTY_SKINCARE: { id: 'BEAUTY_SKINCARE', label: 'Kecantikan & Skincare', keywords: ['skincare', 'serum', 'toner', 'sunscreen', 'lip', 'lipstick', 'moisturizer', 'facial', 'parfum', 'perfume', 'makeup', 'cushion'] },
+  HOME_LIVING: { id: 'HOME_LIVING', label: 'Perlengkapan Rumah & Dapur', keywords: ['rumah', 'dapur', 'panci', 'wajan', 'rak', 'organizer', 'sprei', 'lampu', 'dekorasi', 'sapu', 'botol', 'alat masak'] },
+  MOM_BABY: { id: 'MOM_BABY', label: 'Ibu & Bayi', keywords: ['bayi', 'baby', 'anak', 'mainan', 'baju anak', 'popok', 'stroller', 'ibu'] },
+  AUTOMOTIVE: { id: 'AUTOMOTIVE', label: 'Otomotif & Aksesoris', keywords: ['motor', 'mobil', 'helm', 'sarung', 'oli', 'wiper', 'baut', 'otomotif'] }
+};
+
+function normalizeNicheId(rawNiche = '') {
+  if (!rawNiche) return 'UNIVERSAL';
+  const str = String(rawNiche).trim().toUpperCase().replace(/[\s&/\\-]+/g, '_');
+  if (CANONICAL_NICHES[str]) return str;
+  for (const [key, conf] of Object.entries(CANONICAL_NICHES)) {
+    if (key === 'UNIVERSAL') continue;
+    if (str.includes(key) || conf.keywords.some(k => String(rawNiche).toLowerCase().includes(k))) {
+      return key;
+    }
+  }
+  return 'UNIVERSAL';
+}
+
+function checkNicheCompatibility(product, account) {
+  let allowed = account.allowed_niches;
+  if (!Array.isArray(allowed) || allowed.length === 0) {
+    allowed = ['UNIVERSAL'];
+  }
+  const normalizedAllowed = allowed.map(n => normalizeNicheId(n));
+
+  if (normalizedAllowed.includes('UNIVERSAL')) {
+    return { compatible: true, matchType: 'UNIVERSAL_FALLBACK' };
+  }
+
+  const prodNiche = normalizeNicheId(product.agent_profile?.niche || product.category || product.title);
+  if (normalizedAllowed.includes(prodNiche)) {
+    return { compatible: true, matchType: 'SPECIFIC_MATCH' };
+  }
+
+  return { compatible: false, matchType: 'MISMATCH' };
+}
+
 // 3 Sesi Terstruktur per Hari (Pagi, Siang, Malam) dengan 3 Slot Konten per Sesi (Total 9 Slot Prime-Time per Akun)
 const DEFAULT_CONFIG = {
   autopilot_enabled: true,
@@ -18,6 +61,7 @@ const DEFAULT_CONFIG = {
   posts_per_phase: 3,  // Minimal 3 konten per akun pada setiap fase
   min_product_cooldown_hours: 48,
   target_split: { scaling: 0.5, testing: 0.3, promising: 0.2 },
+  threads_media_mode: 'auto', // 'auto' | 'no_media' | 'with_media'
   default_time_slots: [
     // Sesi 1: Pagi (3 Slot: 06:45, 08:15, 09:30 WIB)
     { session: 'Pagi', name: 'Pagi 1', hour: 6, minute: 45 },
@@ -359,6 +403,25 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
       .get();
 
     const existingPosts = existingPostsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Ambil riwayat memori posting 48 jam terakhir dari product_post_memory (Ledger-Backed Cooldown per Platform)
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+    const recentMemoriesSnap = await db.collection('product_post_memory')
+      .where('user_id', '==', userId)
+      .where('published_at', '>=', fortyEightHoursAgo)
+      .get();
+
+    const platformCooldownSet = new Set();
+    recentMemoriesSnap.docs.forEach(doc => {
+      const data = doc.data();
+      const prodId = data.product_id;
+      const plat = data.context_at_post?.platform;
+      if (prodId && plat) {
+        platformCooldownSet.add(`${prodId}_${plat}`);
+      }
+    });
+
+    const inBatchScheduledKeys = new Set();
     
     // Bangun target slots dengan alokasi kepadatan jam emas hasil pembelajaran analitik
     const targetSlots = buildDynamicTimeSlots(activeInsights, config.default_time_slots || DEFAULT_CONFIG.default_time_slots);
@@ -418,48 +481,121 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           continue; // Slot sudah terisi untuk akun ini
         }
 
-        // Dynamic Product Selection: Pada Jam Emas (is_golden_peak), prioritaskan produk PROVEN/Pemenang
+        // ---------------------------------------------------------------------------------
+        // PRE-FILTER PIPELINE & PROPORTIONAL CANDIDATE SELECTION (MAX_CANDIDATE_ATTEMPTS = 5)
+        // ---------------------------------------------------------------------------------
+        const MAX_CANDIDATE_ATTEMPTS = 5;
         let selectedProduct = null;
+        let selectedMediaCuration = null;
         let isTestingProduct = false;
 
-        if (slot.is_golden_peak && pools.proven.length > 0) {
-          selectedProduct = pools.proven[Math.floor(Math.random() * pools.proven.length)];
-        } else if (slot.is_golden_peak && pools.promising.length > 0) {
-          selectedProduct = pools.promising[Math.floor(Math.random() * pools.promising.length)];
-        } else if (pools.new.length > 0) {
-          selectedProduct = pools.new.shift();
-          isTestingProduct = true;
-        } else if (pools.proven.length > 0) {
-          selectedProduct = pools.proven[Math.floor(Math.random() * pools.proven.length)];
-        } else if (pools.promising.length > 0) {
-          selectedProduct = pools.promising[Math.floor(Math.random() * pools.promising.length)];
-        } else if (pools.testing.length > 0) {
-          selectedProduct = pools.testing[Math.floor(Math.random() * pools.testing.length)];
-          isTestingProduct = true;
-        } else if (validProducts.length > 0) {
-          selectedProduct = validProducts[Math.floor(Math.random() * validProducts.length)];
+        const getEligibleFromList = (list = []) => {
+          return list.filter(p => {
+            if (!p || !p.id) return false;
+            // 1. Lifecycle Check
+            const status = p.lifecycle_status || 'NEW';
+            if (status === 'STOPPED' || p.quarterly_status?.status === 'stopped_for_quarter') return false;
+
+            // 2. Cooldown & In-batch Reservation Check (Key = product_id + platform)
+            const cooldownKey = `${p.id}_${platform}`;
+            if (platformCooldownSet.has(cooldownKey) || inBatchScheduledKeys.has(cooldownKey)) return false;
+
+            // 3. Account Niche Compatibility Check (Specific Match -> Universal Fallback)
+            const nicheCheck = checkNicheCompatibility(p, targetAccount);
+            if (!nicheCheck.compatible) return false;
+
+            return true;
+          });
+        };
+
+        // Tentukan prioritas pool kandidat
+        let priorityPools = [];
+        if (slot.is_golden_peak) {
+          // Golden Peak Override: 80% PROVEN-first, fallback dinamis ke PROMISING, TESTING, NEW
+          priorityPools = [pools.proven, pools.promising, pools.testing, pools.new];
+        } else {
+          // Normal Slot Target: 50% Winner (PROVEN+PROMISING), 30% Testing (TESTING), 20% Discovery (NEW)
+          const roll = Math.random();
+          if (roll < 0.50) {
+            priorityPools = [[...pools.proven, ...pools.promising], pools.testing, pools.new];
+          } else if (roll < 0.80) {
+            priorityPools = [pools.testing, [...pools.proven, ...pools.promising], pools.new];
+          } else {
+            priorityPools = [pools.new, pools.testing, [...pools.proven, ...pools.promising]];
+          }
         }
 
-        if (!selectedProduct) break;
+        // Kumpulkan antrean kandidat yang memenuhi syarat pre-filter
+        const candidateQueue = [];
+        const seenCandidateIds = new Set();
 
-        // 6.1. Profile Produk
-        const profile = await profileShopeeProduct(selectedProduct, userId);
-
-        // 6.2. Evaluasi Media Khusus untuk Platform Target (Anti-Reuse Per Platform)
-        const mediaCuration = await curateProductMedia(selectedProduct, 'auto', platform, userId);
-        if (mediaCuration.no_fresh_media || !mediaCuration.selected_media || mediaCuration.selected_media.length === 0) {
-          logSteps.push(`[${platform.toUpperCase()}] Produk "${selectedProduct.title.slice(0, 25)}..." dilewati: Semua media sudah pernah diposting di ${platform}.`);
-          continue;
+        for (const pool of priorityPools) {
+          const eligible = getEligibleFromList(pool);
+          // Acak urutan kandidat dalam tier yang sama untuk rotasi yang adil
+          const shuffled = [...eligible].sort(() => Math.random() - 0.5);
+          shuffled.forEach(p => {
+            if (!seenCandidateIds.has(p.id)) {
+              seenCandidateIds.add(p.id);
+              candidateQueue.push(p);
+            }
+          });
         }
 
-        const formattedMedia = (mediaCuration.selected_media || []).map(item => {
-          const url = typeof item === 'string' ? item : item?.url || item?.media_url || '';
-          const type = (typeof item === 'object' && item?.type) ? item.type : (mediaCuration.media_type || 'image');
-          return {
-            media_url: url,
-            media_type: type
-          };
-        }).filter(m => m.media_url && typeof m.media_url === 'string' && m.media_url.startsWith('http'));
+        // Tentukan preferensi media khusus akun Threads jika ada
+        const accountThreadsMediaMode = targetAccount.threads_media_mode || config.threads_media_mode || 'auto';
+
+        // Candidate Replacement Retry Loop (Maksimal 5 percobaan sebelum menyatakan NO_ELIGIBLE_CANDIDATE)
+        let attemptCount = 0;
+        while (candidateQueue.length > 0 && attemptCount < MAX_CANDIDATE_ATTEMPTS) {
+          attemptCount++;
+          const candidate = candidateQueue.shift();
+
+          // Cek ketersediaan media segar khusus platform ini
+          const mediaCuration = await curateProductMedia(candidate, 'auto', platform, userId, {
+            threadsMediaMode: accountThreadsMediaMode,
+            allowFallbackNoMedia: true
+          });
+          
+          if (mediaCuration.no_fresh_media || (!mediaCuration.selected_media && mediaCuration.media_type !== 'text')) {
+            logSteps.push(`[${platform.toUpperCase()}] Kandidat #${attemptCount} "${candidate.title.slice(0, 20)}..." dilewati: Media sudah terpakai di ${platform}.`);
+            continue;
+          }
+
+          // Kandidat diterima!
+          selectedProduct = candidate;
+          selectedMediaCuration = mediaCuration;
+          isTestingProduct = (!candidate.lifecycle_status || candidate.lifecycle_status === 'NEW' || candidate.lifecycle_status === 'TESTING');
+
+          // Kunci cooldown & in-batch reservation
+          const lockKey = `${candidate.id}_${platform}`;
+          platformCooldownSet.add(lockKey);
+          inBatchScheduledKeys.add(lockKey);
+          break;
+        }
+
+        if (!selectedProduct) {
+          logSteps.push(`[${platform.toUpperCase()}] Slot ${slot.name} (${slot.session}): NO_ELIGIBLE_CANDIDATE (tidak ada produk memenuhi syarat niche/cooldown/media).`);
+          continue; // Lewati slot secara graceful tanpa memicu error
+        }
+
+        const mediaCuration = selectedMediaCuration;
+        const isNoMediaMode = mediaCuration.media_type === 'text' || (platform === 'threads' && accountThreadsMediaMode === 'no_media');
+
+        // 6.1. Profile Produk (Zero Redundant AI Calls: gunakan cache jika sudah ada)
+        const profile = (selectedProduct.agent_profile && selectedProduct.agent_profile.niche)
+          ? selectedProduct.agent_profile
+          : await profileShopeeProduct(selectedProduct, userId);
+
+        const formattedMedia = isNoMediaMode
+          ? []
+          : (mediaCuration.selected_media || []).map(item => {
+              const url = typeof item === 'string' ? item : item?.url || item?.media_url || '';
+              const type = (typeof item === 'object' && item?.type) ? item.type : (mediaCuration.media_type || 'image');
+              return {
+                media_url: url,
+                media_type: type
+              };
+            }).filter(m => m.media_url && typeof m.media_url === 'string' && m.media_url.startsWith('http'));
 
         // 6.3. Generate Shortlink Unik Khusus Akun Ini
         const shortlinkUrl = await createPostShortlink(selectedProduct, platform, userId);
@@ -479,14 +615,21 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
               .get();
 
             if (expSnap.empty) {
+              const varA_tpl = platform === 'threads'
+                ? (isNoMediaMode ? 'tpl_threads_link_preview_12' : 'tpl_threads_in_this_economy_07')
+                : 'tpl_pas_modern_01';
+              const varB_tpl = platform === 'threads'
+                ? (isNoMediaMode ? 'tpl_threads_value_card_13' : 'tpl_threads_punchy_06')
+                : 'tpl_review_spill_02';
+
               const newExp = await createExperiment({
                 productId: selectedProduct.id,
                 quarter,
-                hypothesis: `Menguji apakah sudut pandang PAS menghasilkan CTR lebih tinggi dibanding Honest Review untuk ${selectedProduct.title.slice(0, 30)}`,
+                hypothesis: `Menguji apakah sudut pandang PAS/Value Shock menghasilkan CTR lebih tinggi dibanding Honest Review untuk ${selectedProduct.title.slice(0, 30)}`,
                 objective: 'clicks',
                 variants: [
-                  { variant_id: 'A', template_id: 'tpl_pas_modern_01', copy_angle: 'Problem-Agitate-Solution' },
-                  { variant_id: 'B', template_id: 'tpl_review_spill_02', copy_angle: 'Honest Review' }
+                  { variant_id: 'A', template_id: varA_tpl, copy_angle: 'Problem-Agitate-Solution' },
+                  { variant_id: 'B', template_id: varB_tpl, copy_angle: 'Honest Review' }
                 ],
                 userId
               });
@@ -518,7 +661,8 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
             session: slot.session || 'Sesi',
             hour: slot.hour || 12,
             minute: slot.minute || 0
-          }
+          },
+          threadsMediaMode: isNoMediaMode ? 'no_media' : accountThreadsMediaMode
         });
 
         // 6.5. Semantic Content Fingerprint Check
@@ -546,7 +690,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           post_type: mediaCuration.media_type === 'video' ? 'reel' : 'feed',
           media: formattedMedia,
           product_id: selectedProduct.id,
-          cta_type: postDraft.cta_type || (platform === 'threads' ? 'soft_cta' : 'direct_link_cta'),
+          cta_type: postDraft.cta_type || (platform === 'threads' ? (isNoMediaMode ? 'link_card_cta' : 'soft_cta') : 'direct_link_cta'),
           targets: [{
             id: Math.random().toString(36).substring(2, 9),
             account_id: targetAccount.id,
@@ -560,8 +704,8 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           updated_at: new Date().toISOString()
         };
 
-        // Khusus Threads: Sertakan struktur First-Reply (Link di Komentar Balasan Pertama)
-        if (platform === 'threads' && postDraft.first_reply_text) {
+        // Khusus Threads: Sertakan struktur First-Reply HANYA jika bukan mode no-media (karena link sudah di caption)
+        if (platform === 'threads' && postDraft.first_reply_text && !isNoMediaMode) {
           newPost.first_reply = {
             enabled: true,
             text: postDraft.first_reply_text,

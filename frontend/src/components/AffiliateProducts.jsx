@@ -41,11 +41,18 @@ import {
   ShieldAlert,
   AlertTriangle
 } from 'lucide-react';
+import Pagination from './common/Pagination';
 
 export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(24);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   // Multi-select & Bulk Action State
   const [selectedIds, setSelectedIds] = useState([]);
@@ -85,7 +92,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
   };
 
   // Fetch Products
-  const fetchProducts = async () => {
+  const fetchProducts = async (targetPage = page, targetLimit = limit) => {
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -94,10 +101,19 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
           search: searchQuery,
           category: selectedCategory,
           media_type: selectedMediaType,
-          sort_by: sortBy
+          sort_by: sortBy,
+          page: targetPage,
+          limit: targetLimit
         }
       });
       setProducts(res.data.products || []);
+      if (res.data.pagination) {
+        setTotalPages(res.data.pagination.total_pages || 1);
+        setTotalItems(res.data.pagination.total_items || 0);
+        setPage(res.data.pagination.page || 1);
+      } else {
+        setTotalItems(res.data.total || (res.data.products || []).length);
+      }
     } catch (err) {
       console.error('Error fetching affiliate products:', err);
       setErrorMsg(err.response?.data?.error || err.message || 'Gagal memuat daftar produk.');
@@ -107,13 +123,15 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
   };
 
   useEffect(() => {
-    fetchProducts();
+    setPage(1);
+    fetchProducts(1, limit);
   }, [selectedCategory, selectedMediaType, sortBy]);
 
   // Handle Search submit / debounce
   const handleSearchSubmit = (e) => {
     e?.preventDefault();
-    fetchProducts();
+    setPage(1);
+    fetchProducts(1, limit);
   };
 
   // Live Counts for filters
@@ -481,7 +499,8 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
               type="button"
               onClick={() => {
                 setSearchQuery('');
-                setTimeout(fetchProducts, 0);
+                setPage(1);
+                fetchProducts(1, limit);
               }}
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
             >
@@ -527,7 +546,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Semua ({products.length})
+              Semua {selectedMediaType === 'all' ? `(${totalItems})` : ''}
             </button>
             <button
               onClick={() => setSelectedMediaType('video')}
@@ -538,7 +557,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
               }`}
             >
               <Film className="w-3.5 h-3.5 text-orange-400" />
-              <span>Video ({videoCount})</span>
+              <span>Video {selectedMediaType === 'video' ? `(${totalItems})` : ''}</span>
             </button>
             <button
               onClick={() => setSelectedMediaType('image')}
@@ -549,7 +568,7 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
               }`}
             >
               <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Foto Saja ({imageOnlyCount})</span>
+              <span>Foto Saja {selectedMediaType === 'image' ? `(${totalItems})` : ''}</span>
             </button>
           </div>
 
@@ -758,23 +777,51 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                     </h3>
                   </div>
 
-                  {/* Price Block */}
-                  <div className="pt-2 border-t border-slate-800/80 flex items-baseline justify-between gap-2">
-                    <div>
-                      <span className="text-sm font-extrabold text-orange-400">
-                        {formatRupiah(product.price)}
-                      </span>
-                      {product.original_price && product.original_price > product.price && (
-                        <span className="block text-[10px] text-slate-500 line-through">
-                          {formatRupiah(product.original_price)}
+                  {/* Price Block & Media Health */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div>
+                        <span className="text-sm font-extrabold text-orange-400">
+                          {formatRupiah(product.price)}
+                        </span>
+                        {product.original_price && product.original_price > product.price && (
+                          <span className="block text-[10px] text-slate-500 line-through">
+                            {formatRupiah(product.original_price)}
+                          </span>
+                        )}
+                      </div>
+
+                      {(product.agent_profile?.niche || product.category) && (
+                        <span className="text-[10px] bg-slate-800/80 text-indigo-300 font-semibold px-2 py-0.5 rounded-md truncate max-w-[110px] border border-slate-700/50">
+                          {product.agent_profile?.niche || product.category}
                         </span>
                       )}
                     </div>
 
-                    {product.category && (
-                      <span className="text-[10px] bg-slate-800/80 text-slate-400 px-2 py-0.5 rounded-md truncate max-w-[90px]">
-                        {product.category}
-                      </span>
+                    {/* Media Health Badges */}
+                    {product.media_health && (
+                      <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold flex items-center gap-1 border ${
+                          product.media_health.facebook?.status === 'healthy'
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            : product.media_health.facebook?.status === 'warning'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                        }`} title={`Facebook: ${product.media_health.facebook?.fresh_images} Foto Segar, ${product.media_health.facebook?.fresh_videos} Video Segar`}>
+                          <span>FB:</span>
+                          <span>{product.media_health.facebook?.fresh_images} Segar</span>
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold flex items-center gap-1 border ${
+                          product.media_health.threads?.status === 'healthy'
+                            ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                            : product.media_health.threads?.status === 'warning'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                        }`} title={`Threads: ${product.media_health.threads?.fresh_images} Foto Segar, ${product.media_health.threads?.fresh_videos} Video Segar`}>
+                          <span>TH:</span>
+                          <span>{product.media_health.threads?.fresh_images} Segar</span>
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -888,8 +935,8 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                             <p className="font-bold text-slate-100 line-clamp-1 hover:text-indigo-400">
                               {product.title}
                             </p>
-                            {product.category && (
-                              <span className="text-[10px] text-slate-500">{product.category}</span>
+                            {(product.agent_profile?.niche || product.category) && (
+                              <span className="text-[10px] text-indigo-400 font-semibold">{product.agent_profile?.niche || product.category}</span>
                             )}
                           </div>
                         </div>
@@ -912,15 +959,32 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
                       </td>
 
                       <td className="p-4">
-                        <div className="flex items-center gap-1.5">
-                          {product.videos?.length > 0 && (
-                            <span className="px-2 py-0.5 rounded bg-orange-600/20 text-orange-400 text-[10px] font-bold border border-orange-500/30">
-                              Video
-                            </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {product.media_health ? (
+                            <>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                product.media_health.facebook?.status === 'healthy' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                              }`}>
+                                FB: {product.media_health.facebook?.fresh_images}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                product.media_health.threads?.status === 'healthy' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                              }`}>
+                                TH: {product.media_health.threads?.fresh_images}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              {product.videos?.length > 0 && (
+                                <span className="px-2 py-0.5 rounded bg-orange-600/20 text-orange-400 text-[10px] font-bold border border-orange-500/30">
+                                  Video
+                                </span>
+                              )}
+                              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">
+                                {product.images?.length || 0} Foto
+                              </span>
+                            </>
                           )}
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">
-                            {product.images?.length || 0} Foto
-                          </span>
                         </div>
                       </td>
 
@@ -983,6 +1047,25 @@ export default function AffiliateProducts({ onSendToComposer, onSendToAffiliate 
           </div>
         </div>
       )}
+
+      {/* Pagination Controls */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        limit={limit}
+        onPageChange={(newPage) => {
+          setPage(newPage);
+          fetchProducts(newPage, limit);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onLimitChange={(newLimit) => {
+          setLimit(newLimit);
+          setPage(1);
+          fetchProducts(1, newLimit);
+        }}
+        limitOptions={[12, 24, 48, 96]}
+      />
 
       {/* ========================================================================= */}
       {/* FLOATING BULK ACTIONS TOOLBAR                                             */}

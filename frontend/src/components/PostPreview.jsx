@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
-import { Facebook, Instagram, Heart, MessageCircle, Share2, ThumbsUp, MoreHorizontal, Globe, AtSign, Repeat, CheckCircle2 } from 'lucide-react';
+import { Facebook, Instagram, Heart, MessageCircle, Share2, ThumbsUp, MoreHorizontal, Globe, AtSign, Repeat, CheckCircle2, ExternalLink, Star } from 'lucide-react';
 
-export default function PostPreview({ content = '', title = '', mediaUrl = '', mediaType = 'image', selectedAccounts = [], replyToId = '', quotePostId = '' }) {
+export default function PostPreview({
+  content = '',
+  title = '',
+  mediaUrl = '',
+  mediaType = 'image',
+  selectedAccounts = [],
+  replyToId = '',
+  quotePostId = '',
+  threadsPostWithoutMedia = false,
+}) {
   const [platformTab, setPlatformTab] = useState('facebook');
 
   // Get demo account names or fallback
@@ -11,6 +20,15 @@ export default function PostPreview({ content = '', title = '', mediaUrl = '', m
 
   const charCount = content ? content.length : 0;
   const isThreadsExceeded = charCount > 500;
+
+  // Extract URL from content for Threads Link Card Preview
+  const urlMatch = content ? content.match(/(https?:\/\/[^\s]+)/i) : null;
+  const foundUrl = urlMatch ? urlMatch[0] : '';
+  const displayUrl = foundUrl
+    ? foundUrl.replace(/^https?:\/\//, '').slice(0, 32) + (foundUrl.length > 35 ? '...' : '')
+    : '';
+
+  const showThreadsLinkCard = (threadsPostWithoutMedia || !mediaUrl) && Boolean(foundUrl);
 
   return (
     <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md">
@@ -223,11 +241,24 @@ export default function PostPreview({ content = '', title = '', mediaUrl = '', m
           {title && <p className="text-xs font-bold text-slate-300 mb-1">[{title}]</p>}
 
           {/* Content Body */}
-          <p className={`text-xs whitespace-pre-wrap leading-relaxed mb-3 ${
+          <div className={`text-xs whitespace-pre-wrap leading-relaxed mb-3 ${
             isThreadsExceeded ? 'text-rose-300' : 'text-slate-200'
           }`}>
-            {content || 'Tulis isi postingan Threads Anda...'}
-          </p>
+            {content ? (
+              content.split(/(https?:\/\/[^\s]+)/gi).map((part, pIdx) => {
+                if (part.match(/^https?:\/\//i)) {
+                  return (
+                    <span key={pIdx} className="text-sky-400 hover:underline inline-flex items-center gap-0.5 font-medium break-all">
+                      {part}
+                    </span>
+                  );
+                }
+                return part;
+              })
+            ) : (
+              'Tulis isi postingan Threads Anda...'
+            )}
+          </div>
 
           {isThreadsExceeded && (
             <p className="text-[10px] text-rose-400 mb-2 font-medium">
@@ -235,14 +266,69 @@ export default function PostPreview({ content = '', title = '', mediaUrl = '', m
             </p>
           )}
 
-          {/* Media */}
-          {mediaUrl && (
+          {/* Media Mode (Foto / Video) */}
+          {mediaUrl && !threadsPostWithoutMedia && (
             <div className="rounded-xl overflow-hidden mb-3 border border-slate-800 bg-slate-950 max-h-64 flex items-center justify-center">
               {mediaType === 'video' ? (
                 <video src={mediaUrl} controls className="w-full max-h-64 object-contain" />
               ) : (
                 <img src={mediaUrl} alt="Threads Preview" className="w-full max-h-64 object-cover" />
               )}
+            </div>
+          )}
+
+          {/* Threads Link Card Preview (Native Auto-Rendered by Meta Threads when posted without media) */}
+          {showThreadsLinkCard && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden mb-3 shadow-lg hover:border-slate-700 transition-all">
+              <div className="flex flex-col sm:flex-row bg-slate-900/70 border-b border-slate-800/80">
+                {/* Left Product Image Mock */}
+                <div className="sm:w-36 h-28 bg-gradient-to-br from-orange-950/40 via-slate-900 to-slate-950 flex items-center justify-center shrink-0 border-r border-slate-800/60 p-2 relative overflow-hidden">
+                  <div className="text-center">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                      PROMO OBRAL
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-1 font-semibold">Produk Shopee</p>
+                  </div>
+                  <div className="absolute top-1 right-1 bg-rose-600 text-white text-[8px] font-extrabold px-1 rounded">
+                    HOT
+                  </div>
+                </div>
+
+                {/* Right Product Details Mock */}
+                <div className="p-2.5 flex-1 min-w-0 flex flex-col justify-between">
+                  <div>
+                    <h5 className="text-[11px] font-bold text-slate-100 line-clamp-2 leading-tight">
+                      {title || 'Produk Rekomendasi Shopee Official'}
+                    </h5>
+                    <p className="text-[11px] font-bold text-orange-400 mt-1">
+                      Rp 14.200 - Rp 34.200
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1 text-[9px] text-amber-400">
+                    <div className="flex items-center">
+                      <Star className="w-2.5 h-2.5 fill-amber-400" />
+                      <Star className="w-2.5 h-2.5 fill-amber-400" />
+                      <Star className="w-2.5 h-2.5 fill-amber-400" />
+                      <Star className="w-2.5 h-2.5 fill-amber-400" />
+                      <Star className="w-2.5 h-2.5 fill-amber-400" />
+                    </div>
+                    <span className="text-slate-400 font-medium">(Penilaian Tertinggi)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Domain & Summary Bar */}
+              <div className="px-3 py-2 bg-slate-950 flex items-center justify-between text-[10px] text-slate-400">
+                <div className="flex items-center gap-1.5 truncate">
+                  <div className="w-3.5 h-3.5 rounded bg-orange-600 text-white flex items-center justify-center font-bold text-[8px] shrink-0">
+                    S
+                  </div>
+                  <span className="font-semibold text-slate-300 truncate">s.shopee.co.id</span>
+                  <span className="text-slate-500">•</span>
+                  <span className="text-slate-400 truncate">Link Card Preview Otomatis</span>
+                </div>
+                <ExternalLink className="w-3 h-3 text-slate-500 shrink-0" />
+              </div>
             </div>
           )}
 

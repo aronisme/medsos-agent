@@ -14,11 +14,22 @@ const parsePriceNumber = (val) => {
   return parseInt(cleaned, 10) || 0;
 };
 
+const { calculateProductMediaHealth } = require('../services/agent/mediaEvaluatorService');
+
 // GET /api/affiliate-products
-// Supports ?search=&category=&media_type=&sort_by=&limit=
+// Supports ?search=&category=&niche=&status=&media_type=&sort_by=&page=&limit=
 router.get('/', async (req, res) => {
   try {
-    const { search, category, media_type, sort_by = 'newest', limit = 100 } = req.query;
+    const {
+      search,
+      category,
+      niche,
+      status,
+      media_type,
+      sort_by = 'newest',
+      page = 1,
+      limit = 24
+    } = req.query;
 
     const snapshot = await db.collection('affiliate_products')
       .where('user_id', '==', req.user.id)
@@ -26,7 +37,7 @@ router.get('/', async (req, res) => {
 
     let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // In-memory filter for search query
+    // 1. In-memory filter for search query
     if (search && search.trim()) {
       const q = search.toLowerCase().trim();
       items = items.filter(item => 
@@ -34,16 +45,31 @@ router.get('/', async (req, res) => {
         (item.shop_name && item.shop_name.toLowerCase().includes(q)) ||
         (item.shop_location && item.shop_location.toLowerCase().includes(q)) ||
         (item.description && item.description.toLowerCase().includes(q)) ||
-        (item.category && item.category.toLowerCase().includes(q))
+        (item.category && item.category.toLowerCase().includes(q)) ||
+        (item.agent_profile?.niche && item.agent_profile.niche.toLowerCase().includes(q))
       );
     }
 
-    // Filter by Category
+    // 2. Filter by Category / Niche
     if (category && category !== 'all') {
-      items = items.filter(item => item.category === category);
+      items = items.filter(item => item.category === category || item.agent_profile?.niche === category);
+    }
+    if (niche && niche !== 'all' && niche !== 'UNIVERSAL') {
+      items = items.filter(item => {
+        const prodNiche = item.agent_profile?.niche || item.category || '';
+        return prodNiche.toLowerCase().includes(niche.toLowerCase());
+      });
     }
 
-    // Filter by Media Type (e.g. 'video', 'image')
+    // 3. Filter by Lifecycle Status
+    if (status && status !== 'all') {
+      items = items.filter(item => {
+        const itemStatus = item.lifecycle_status || (item.quarterly_status?.status === 'stopped_for_quarter' ? 'STOPPED' : 'NEW');
+        return itemStatus === status;
+      });
+    }
+
+    // 4. Filter by Media Type (e.g. 'video', 'image')
     if (media_type === 'video') {
       items = items.filter(item => 
         (item.videos && item.videos.length > 0) || 
@@ -57,23 +83,52 @@ router.get('/', async (req, res) => {
       );
     }
 
-    // Sorting
+    // 5. Deterministic Sorting: tie-breaker on ID (created_at DESC, id DESC)
     if (sort_by === 'newest') {
-      items.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      items.sort((a, b) => {
+        const timeDiff = new Date(b.created_at || 0) - new Date(a.created_at || 0);
+        return timeDiff !== 0 ? timeDiff : String(b.id || '').localeCompare(String(a.id || ''));
+      });
     } else if (sort_by === 'oldest') {
-      items.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+      items.sort((a, b) => {
+        const timeDiff = new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        return timeDiff !== 0 ? timeDiff : String(a.id || '').localeCompare(String(b.id || ''));
+      });
     } else if (sort_by === 'price_asc') {
-      items.sort((a, b) => (a.price || 0) - (b.price || 0));
+      items.sort((a, b) => (a.price || 0) - (b.price || 0) || String(a.id || '').localeCompare(String(b.id || '')));
     } else if (sort_by === 'price_desc') {
-      items.sort((a, b) => (b.price || 0) - (a.price || 0));
+      items.sort((a, b) => (b.price || 0) - (a.price || 0) || String(b.id || '').localeCompare(String(a.id || '')));
     } else if (sort_by === 'rating') {
-      items.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      items.sort((a, b) => (b.rating || 0) - (a.rating || 0) || String(b.id || '').localeCompare(String(a.id || '')));
     }
 
-    const parsedLimit = parseInt(limit, 10) || 100;
-    items = items.slice(0, parsedLimit);
+    const totalCount = items.length;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, parseInt(limit, 10) || 24);
+    const totalPages = Math.ceil(totalCount / limitNum) || 1;
 
-    res.json({ success: true, products: items, total: items.length });
+    const offset = (pageNum - 1) * limitNum;
+    const pagedItems = items.slice(offset, offset + limitNum);
+
+    // Enrich with real-time Media Health
+    const enrichedProducts = pagedItems.map(prod => ({
+      ...prod,
+      media_health: calculateProductMediaHealth(prod)
+    }));
+
+    res.json({
+      success: true,
+      products: enrichedProducts,
+      total: totalCount,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total_items: totalCount,
+        total_pages: totalPages,
+        has_next: pageNum < totalPages,
+        has_prev: pageNum > 1
+      }
+    });
   } catch (err) {
     console.error('Error fetching affiliate products:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -87,7 +142,8 @@ router.get('/:id', async (req, res) => {
     if (!doc.exists || doc.data().user_id !== req.user.id) {
       return res.status(404).json({ success: false, error: 'Produk tidak ditemukan.' });
     }
-    res.json({ success: true, product: { id: doc.id, ...doc.data() } });
+    const data = doc.data();
+    res.json({ success: true, product: { id: doc.id, ...data, media_health: calculateProductMediaHealth(data) } });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

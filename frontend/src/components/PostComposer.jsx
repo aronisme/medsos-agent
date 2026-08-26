@@ -41,6 +41,7 @@ export default function PostComposer({ onPostCreated, initialData }) {
   const [replyToId, setReplyToId] = useState('');
   const [quotePostId, setQuotePostId] = useState('');
   const [showThreadsOptions, setShowThreadsOptions] = useState(false);
+  const [threadsPostWithoutMedia, setThreadsPostWithoutMedia] = useState(false);
 
   const [mediaList, setMediaList] = useState(() => {
     if (initialData?.mediaList && Array.isArray(initialData.mediaList) && initialData.mediaList.length > 0) {
@@ -178,7 +179,7 @@ export default function PostComposer({ onPostCreated, initialData }) {
       return;
     }
 
-    const effectiveMedia = mediaList.length > 0
+    let effectiveMedia = mediaList.length > 0
       ? mediaList
       : (mediaUrl ? [{ url: mediaUrl, type: mediaType }] : []);
 
@@ -191,6 +192,16 @@ export default function PostComposer({ onPostCreated, initialData }) {
       const acc = accounts.find(a => a.id === id);
       return acc && acc.platform === 'threads';
     });
+
+    const isOnlyThreadsSelected = selectedTargets.length > 0 && selectedTargets.every(id => {
+      const acc = accounts.find(a => a.id === id);
+      return acc && acc.platform === 'threads';
+    });
+
+    // Jika target hanya Threads dan user mengaktifkan mode tanpa media, kosongkan media
+    if (threadsPostWithoutMedia && isOnlyThreadsSelected) {
+      effectiveMedia = [];
+    }
 
     if (hasIgTarget && effectiveMedia.length === 0 && publishMode !== 'draft') {
       setMessage({ type: 'error', text: 'Postingan ke Instagram WAJIB menyertakan media (Foto atau Video).' });
@@ -216,6 +227,7 @@ export default function PostComposer({ onPostCreated, initialData }) {
         threads_options: {
           replyToId: replyToId.trim() || undefined,
           quotePostId: quotePostId.trim() || undefined,
+          no_media: threadsPostWithoutMedia,
         },
       };
 
@@ -608,6 +620,87 @@ export default function PostComposer({ onPostCreated, initialData }) {
               )}
             </div>
 
+            {/* Opsi Khusus Threads (Tampil jika ada target Threads) */}
+            {selectedTargets.some(id => accounts.find(a => a.id === id)?.platform === 'threads') && (
+              <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-black border border-slate-700 flex items-center justify-center text-white text-xs">
+                      <AtSign className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-bold text-white">Opsi Khusus Threads</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowThreadsOptions(!showThreadsOptions)}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
+                  >
+                    {showThreadsOptions ? 'Tutup Opsi Tambahan' : 'Buka Opsi Tambahan'}
+                  </button>
+                </div>
+
+                {/* Toggle Post Tanpa Media (Link Card Preview) */}
+                <div
+                  onClick={() => setThreadsPostWithoutMedia(!threadsPostWithoutMedia)}
+                  className={`cursor-pointer p-3 rounded-xl border flex items-start gap-3 transition-all ${
+                    threadsPostWithoutMedia
+                      ? 'bg-sky-500/10 border-sky-500/40 text-white'
+                      : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={threadsPostWithoutMedia}
+                    onChange={() => {}}
+                    className="mt-0.5 w-4 h-4 accent-sky-500 rounded cursor-pointer shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>🔗 Post Tanpa Media (Tampilkan Link Card Preview)</span>
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                        DIREKOMENDASIKAN
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                      Postingan Threads diterbitkan sebagai teks murni tanpa upload file gambar/video. Meta Threads secara otomatis merender kartu preview interaktif (thumbnail, judul, harga, dan rating) dari link di dalam caption.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Collapsible Advanced Threads IDs */}
+                {showThreadsOptions && (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-2.5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Reply to Thread ID (Balasan)
+                      </label>
+                      <input
+                        type="text"
+                        value={replyToId}
+                        onChange={(e) => setReplyToId(e.target.value)}
+                        placeholder="Contoh: 179238492019283"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Quote Post ID (Kutip Post)
+                      </label>
+                      <input
+                        type="text"
+                        value={quotePostId}
+                        onChange={(e) => setQuotePostId(e.target.value)}
+                        placeholder="Contoh: 179238492019283"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Publishing Action Options */}
             <div className="pt-2 border-t border-slate-800 space-y-3">
               <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
@@ -710,6 +803,7 @@ export default function PostComposer({ onPostCreated, initialData }) {
               selectedAccounts={accounts.filter((a) => selectedTargets.includes(a.id))}
               replyToId={replyToId}
               quotePostId={quotePostId}
+              threadsPostWithoutMedia={threadsPostWithoutMedia}
             />
           </div>
         </div>

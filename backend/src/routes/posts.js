@@ -6,10 +6,10 @@ const router = express.Router();
 
 router.use(authRequired);
 
-// GET /api/posts?status=draft|scheduled|posted|failed&platform=facebook|instagram|threads&account_id=...&limit=50
+// GET /api/posts?status=draft|scheduled|posted|failed&platform=facebook|instagram|threads&account_id=...&page=1&limit=20
 router.get('/', async (req, res) => {
   try {
-    const { status, platform, account_id, limit = 50 } = req.query;
+    const { status, platform, account_id, page = 1, limit = 20 } = req.query;
     let query = db.collection('posts').where('user_id', '==', req.user.id);
     
     if (status && status !== 'all') {
@@ -33,14 +33,35 @@ router.get('/', async (req, res) => {
       );
     }
 
-    posts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    // Deterministic Sort: created_at DESC, id DESC
+    posts.sort((a, b) => {
+      const timeDiff = new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      return timeDiff !== 0 ? timeDiff : String(b.id || '').localeCompare(String(a.id || ''));
+    });
 
-    const parsedLimit = parseInt(limit, 10) || 50;
-    posts = posts.slice(0, parsedLimit);
+    const totalCount = posts.length;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, parseInt(limit, 10) || 20);
+    const totalPages = Math.ceil(totalCount / limitNum) || 1;
+
+    const offset = (pageNum - 1) * limitNum;
+    const pagedPosts = posts.slice(offset, offset + limitNum);
     
-    res.json({ posts });
+    res.json({
+      success: true,
+      posts: pagedPosts,
+      total: totalCount,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total_items: totalCount,
+        total_pages: totalPages,
+        has_next: pageNum < totalPages,
+        has_prev: pageNum > 1
+      }
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

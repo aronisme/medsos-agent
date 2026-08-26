@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   Check,
 } from 'lucide-react';
+import Pagination from './common/Pagination';
 
 export default function PostList() {
   const [posts, setPosts] = useState([]);
@@ -32,6 +33,12 @@ export default function PostList() {
   const [accounts, setAccounts] = useState([]);
   const [selectedPost, setSelectedPost] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   // Multi-select & Bulk Delete State
   const [selectedIds, setSelectedIds] = useState([]);
@@ -48,16 +55,25 @@ export default function PostList() {
     }
   };
 
-  const fetchPosts = async () => {
+  const fetchPosts = async (targetPage = page, targetLimit = limit) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (platformFilter !== 'all') params.append('platform', platformFilter);
       if (accountFilter !== 'all') params.append('account_id', accountFilter);
+      params.append('page', targetPage);
+      params.append('limit', targetLimit);
 
       const res = await api.get(`/posts?${params.toString()}`);
       setPosts(res.data.posts || []);
+      if (res.data.pagination) {
+        setTotalPages(res.data.pagination.total_pages || 1);
+        setTotalItems(res.data.pagination.total_items || 0);
+        setPage(res.data.pagination.page || 1);
+      } else {
+        setTotalItems(res.data.total || (res.data.posts || []).length);
+      }
       setSelectedIds([]);
     } catch (err) {
       console.error('Gagal mengambil daftar postingan', err);
@@ -71,7 +87,8 @@ export default function PostList() {
   }, []);
 
   useEffect(() => {
-    fetchPosts();
+    setPage(1);
+    fetchPosts(1, limit);
   }, [statusFilter, platformFilter, accountFilter]);
 
   const filteredAccounts = accounts.filter(acc => 
@@ -375,6 +392,25 @@ export default function PostList() {
           })}
         </div>
       )}
+
+      {/* Pagination Controls */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        limit={limit}
+        onPageChange={(newPage) => {
+          setPage(newPage);
+          fetchPosts(newPage, limit);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onLimitChange={(newLimit) => {
+          setLimit(newLimit);
+          setPage(1);
+          fetchPosts(1, newLimit);
+        }}
+        limitOptions={[10, 20, 50, 100]}
+      />
 
       {/* Floating Bulk Actions Toolbar */}
       {selectedIds.length > 0 && (

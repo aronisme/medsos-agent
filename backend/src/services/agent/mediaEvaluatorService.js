@@ -92,13 +92,40 @@ async function markMediaUsedOnPlatform(productId, mediaUrls = [], platform = 'fa
  * 4. ATAU Maksimal 1 Video Terbaik per post (demo/review/unboxing).
  * 
  * @param {Object} product - Objek produk
- * @param {string} [preferredType] - 'image' | 'video' | 'auto'
+ * @param {string} [preferredType] - 'image' | 'video' | 'auto' | 'none'
  * @param {string} [platform] - 'facebook' | 'threads' | 'instagram' | 'all'
  * @param {string} [userId]
- * @returns {Promise<Object>} { media_type: 'image'|'video'|null, selected_media: Array, no_fresh_media: boolean, reasoning: string }
+ * @param {Object} [options] - { threadsMediaMode: 'auto'|'no_media'|'with_media', allowFallbackNoMedia: boolean }
+ * @returns {Promise<Object>} { media_type: 'image'|'video'|'text'|null, selected_media: Array, no_fresh_media: boolean, reasoning: string }
  */
-async function curateProductMedia(product, preferredType = 'auto', platform = 'all', userId = 'system') {
+async function curateProductMedia(product, preferredType = 'auto', platform = 'all', userId = 'system', options = {}) {
   try {
+    const { threadsMediaMode = 'auto', allowFallbackNoMedia = true } = options;
+    const isThreads = platform === 'threads';
+
+    // 0. Jika platform Threads secara eksplisit memilih mode no_media / preferredType = 'none'
+    if (isThreads && (threadsMediaMode === 'no_media' || preferredType === 'none')) {
+      const result = {
+        media_type: 'text',
+        selected_media: [],
+        no_fresh_media: false,
+        reasoning: 'Mode posting Teks + Link Card Preview (tanpa media foto/video) aktif untuk Threads.'
+      };
+
+      if (product.id) {
+        await logAgentDecision({
+          userId,
+          decisionType: 'MEDIA_SELECTION',
+          productId: product.id,
+          summary: `Kurasi Media: Postingan Teks + Link Preview (Tanpa Media) untuk THREADS`,
+          reasoning: result.reasoning,
+          metadata: { platform, threads_media_mode: 'no_media' }
+        });
+      }
+
+      return result;
+    }
+
     const rawImages = Array.isArray(product.images) ? product.images : [];
     const rawVideos = Array.isArray(product.videos) ? product.videos : [];
     const rawMediaList = Array.isArray(product.media) ? product.media : [];
@@ -163,6 +190,30 @@ async function curateProductMedia(product, preferredType = 'auto', platform = 'a
 
     if (freshImageList.length === 0) {
       // Jika semua gambar & video sudah habis terpakai pada platform ini
+      // Khusus Threads: Fallback mulus ke mode Teks + Link Card Preview jika diizinkan
+      if (isThreads && allowFallbackNoMedia && threadsMediaMode !== 'with_media') {
+        const result = {
+          media_type: 'text',
+          selected_media: [],
+          no_fresh_media: false,
+          is_no_media_fallback: true,
+          reasoning: `Media visual produk (${allImageList.length} foto, ${allVideoList.length} video) sudah pernah digunakan di [THREADS]. Beralih otomatis ke mode Teks + Link Card Preview tanpa media.`
+        };
+
+        if (product.id) {
+          await logAgentDecision({
+            userId,
+            decisionType: 'MEDIA_SELECTION',
+            productId: product.id,
+            summary: `Kurasi Media: Fallback Otomatis ke Link Card Preview (Tanpa Media) untuk THREADS`,
+            reasoning: result.reasoning,
+            metadata: { platform, used_count: usedMediaSet.size, fallback_to_no_media: true }
+          });
+        }
+
+        return result;
+      }
+
       const result = {
         media_type: null,
         selected_media: [],
@@ -226,8 +277,73 @@ async function curateProductMedia(product, preferredType = 'auto', platform = 'a
   }
 }
 
+/**
+ * Menghitung ringkasan kesehatan media produk (sisa media segar per platform)
+ * Digunakan secara terpusat oleh REST API katalog produk dan antarmuka UI.
+ * @param {Object} product
+ * @returns {Object}
+ */
+function calculateProductMediaHealth(product = {}) {
+  const rawImages = Array.isArray(product.images) ? product.images : [];
+  const rawVideos = Array.isArray(product.videos) ? product.videos : [];
+  const rawMediaList = Array.isArray(product.media) ? product.media : [];
+
+  const allImageList = [];
+  const allVideoList = [];
+
+  rawMediaList.forEach(m => {
+    if (m?.type === 'video' && m.url && !allVideoList.includes(m.url)) allVideoList.push(m.url);
+    else if (m?.type === 'image' && m.url && !allImageList.includes(m.url)) allImageList.push(m.url);
+  });
+
+  rawVideos.forEach(v => {
+    const url = typeof v === 'string' ? v : v?.url;
+    if (url && !allVideoList.includes(url)) allVideoList.push(url);
+  });
+
+  rawImages.forEach(img => {
+    const url = typeof img === 'string' ? img : img?.url;
+    if (url && !allImageList.includes(url)) allImageList.push(url);
+  });
+
+  const usedByPlatform = product.used_media_by_platform || {};
+
+  const platforms = ['facebook', 'threads'];
+  const summary = {};
+
+  platforms.forEach(platform => {
+    const usedList = Array.isArray(usedByPlatform[platform]) ? usedByPlatform[platform] : [];
+    const usedSet = new Set(usedList.map(u => String(u).trim()));
+
+    const freshImages = allImageList.filter(url => !usedSet.has(String(url).trim())).length;
+    const freshVideos = allVideoList.filter(url => !usedSet.has(String(url).trim())).length;
+    const canPost = (freshVideos >= 1 || freshImages >= 1 || platform === 'threads');
+
+    let status = 'healthy';
+    if (freshVideos === 0 && freshImages === 0) {
+      status = platform === 'threads' ? 'link_preview_ready' : 'exhausted';
+    } else if (freshImages <= 1 && freshVideos === 0) {
+      status = 'warning';
+    }
+
+    summary[platform] = {
+      total_images: allImageList.length,
+      total_videos: allVideoList.length,
+      fresh_images: freshImages,
+      fresh_videos: freshVideos,
+      can_post: canPost,
+      can_post_no_media: platform === 'threads',
+      status
+    };
+  });
+
+  return summary;
+}
+
 module.exports = {
   curateProductMedia,
   getUsedMediaForPlatform,
   markMediaUsedOnPlatform,
+  calculateProductMediaHealth,
 };
+

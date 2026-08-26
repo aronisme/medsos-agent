@@ -117,11 +117,27 @@ async function publishPostNow(postId) {
             post.first_reply.reply_attempts = (post.first_reply.reply_attempts || 0) + 1;
             try {
               let replyRes;
+              // Defensive sanitize: pastikan hanya link afiliasi resmi yang diposting
+              let cleanReplyText = post.first_reply.text;
+              const affLink = post.first_reply.affiliate_url;
+              if (affLink) {
+                const lines = cleanReplyText.split('\n');
+                const sanitizedLines = lines.map(line => {
+                  if (line.includes(affLink)) return line;
+                  return line.replace(/(https?:\/\/[^\s]+|s\.id\/[^\s]+|bit\.ly\/[^\s]+|shope\.ee\/[^\s]+|shopee\.co\.id\/[^\s]+)/gi, '').trim();
+                }).filter(Boolean);
+                cleanReplyText = sanitizedLines.join('\n');
+                if (!cleanReplyText.includes(affLink)) {
+                  cleanReplyText = `${cleanReplyText}\n🛒 ${affLink}`.trim();
+                }
+              }
+
               if (env.dryRun || !accDoc.data().access_token) {
                 replyRes = { postId: `th_reply_dryrun_${Date.now()}` };
               } else {
-                replyRes = await publishThreadsReply(accDoc.data(), post.first_reply.text, pubRes.postId);
+                replyRes = await publishThreadsReply(accDoc.data(), cleanReplyText, pubRes.postId);
               }
+              post.first_reply.text = cleanReplyText;
               post.first_reply.status = 'published';
               post.first_reply.reply_id = replyRes.postId;
               post.first_reply.reply_published_at = new Date().toISOString();

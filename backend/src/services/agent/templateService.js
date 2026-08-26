@@ -20,8 +20,8 @@ const SEED_TEMPLATES = [
     name: 'Honest Review Spill Link',
     category: 'Universal',
     angle: 'Honest Review',
-    structure: 'Jujur awalnya ragu, tapi pas dicoba ternyata beneran sebagus itu! 😍\n\nReview singkat {PRODUCT_NAME}:\n{USP_BULLETS}\n\nBuat yang nanya spill belinya di mana, link tokonya ada di sini ya:\n{CTA_LINK}\n\n{HASHTAGS}',
-    platform_fit: ['threads', 'instagram', 'facebook'],
+    structure: '{HOOK}\n\nReview singkat {PRODUCT_NAME}:\n{USP_BULLETS}\n\nBuat yang mau cek link toko resminya:\n{CTA_LINK}\n\n{HASHTAGS}',
+    platform_fit: ['instagram', 'facebook'],
     is_active: true,
   },
   // 3. Flash Promo / FOMO Urgency
@@ -113,21 +113,42 @@ const SEED_TEMPLATES = [
     structure: '{HOOK}\n\n{USP_BULLETS}\n\nModal {PRICE_DISCOUNT} udah dapet kualitas juara.',
     platform_fit: ['threads'],
     is_active: true,
+  },
+  // 12. Threads Direct Link Card (Native Preview)
+  {
+    id: 'tpl_threads_link_preview_12',
+    name: 'Threads Direct Link Card Preview',
+    category: 'Universal',
+    angle: 'Honest Review',
+    structure: '{HOOK}\n\nReview singkat {PRODUCT_NAME}:\n{USP_BULLETS}\n\n{CTA_LINK}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 13. Threads Value Shock Card Preview
+  {
+    id: 'tpl_threads_value_card_13',
+    name: 'Threads Value Shock Card Preview',
+    category: 'Universal',
+    angle: 'Flash Promo FOMO',
+    structure: '{HOOK}\n\n{PRODUCT_NAME} ({PRICE_DISCOUNT})\n{USP_BULLETS}\n\n{CTA_LINK}',
+    platform_fit: ['threads'],
+    is_active: true,
   }
 ];
 
+let seedTemplatesInitialized = false;
+
 /**
- * Inisialisasi seed templates di database jika koleksi masih kosong
+ * Inisialisasi & sinkronisasi seed templates di database
  * @param {string} userId
  */
 async function ensureSeedTemplates(userId = 'system') {
+  if (seedTemplatesInitialized) return;
   try {
     const snap = await db.collection('post_templates').limit(1).get();
     if (snap.empty) {
-      const batch = db.batch();
       for (const tpl of SEED_TEMPLATES) {
-        const docRef = db.collection('post_templates').doc(tpl.id);
-        batch.set(docRef, {
+        await db.collection('post_templates').doc(tpl.id).set({
           ...tpl,
           user_id: userId,
           segment_performance: {},
@@ -136,16 +157,16 @@ async function ensureSeedTemplates(userId = 'system') {
           updated_at: new Date().toISOString()
         });
       }
-      await batch.commit();
-      console.log('[TemplateService] Seed templates berhasil diinisialisasi.');
     }
+    seedTemplatesInitialized = true;
   } catch (err) {
-    console.error('[ensureSeedTemplates Error]:', err.message);
+    console.warn('[ensureSeedTemplates Warning]:', err.message);
   }
 }
 
 /**
  * Memilih template terbaik menggunakan Contextual Multi-Armed Bandit (80% Eksploitasi, 20% Eksplorasi)
+ * dengan Upper Confidence Bound (UCB) dan Random Jitter untuk rotasi yang adil saat cold-start.
  * @param {Object} opts
  * @param {string} opts.platform - 'facebook' | 'instagram' | 'threads'
  * @param {string} opts.niche - Niche produk
@@ -187,17 +208,20 @@ async function selectTemplateByBandit({
       candidates = nonExcluded;
     }
 
-    // Hitung bobot tiap template untuk segmen (Platform + Niche + Objective)
+    // Hitung bobot tiap template untuk segmen (Platform + Objective) dengan UCB exploration & tie-breaking jitter
     const segmentKey = `${platform}__${objective}`;
     const scoredCandidates = candidates.map(t => {
       const seg = t.segment_performance?.[segmentKey] || {};
       const avgCtr = seg.avg_ctr || 0.02; // default baseline 2% CTR
       const sampleSize = seg.sample_size || 0;
 
-      // Bandit weight score
+      // UCB1 Exploration Term + Random Jitter agar template dengan performa seri terdistribusi secara acak merata
+      const explorationBonus = sampleSize < 3 ? 0.015 : Math.sqrt((2 * Math.log(Math.max(2, candidates.length))) / (sampleSize + 1)) * 0.01;
+      const tieBreakerJitter = Math.random() * 0.008; // acak 0.0% - 0.8% untuk rotasi cold-start
+
       return {
         ...t,
-        bandit_score: avgCtr + (sampleSize < 3 ? 0.01 : 0), // bonus eksplorasi untuk yang masih baru
+        bandit_score: avgCtr + explorationBonus + tieBreakerJitter,
         sample_size: sampleSize
       };
     });
@@ -210,7 +234,6 @@ async function selectTemplateByBandit({
 
     let chosenTemplate = null;
     if (isExploration) {
-      // Pilih acak dari sisa kandidat
       const randomIndex = Math.floor(Math.random() * scoredCandidates.length);
       chosenTemplate = scoredCandidates[randomIndex];
     } else {
@@ -220,7 +243,11 @@ async function selectTemplateByBandit({
     return chosenTemplate;
   } catch (err) {
     console.error('[selectTemplateByBandit Error]:', err.message);
-    return SEED_TEMPLATES[0];
+    const fallbacks = SEED_TEMPLATES.filter(t => Array.isArray(t.platform_fit) && t.platform_fit.includes(platform));
+    if (fallbacks.length > 0) {
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    }
+    return SEED_TEMPLATES[Math.floor(Math.random() * SEED_TEMPLATES.length)];
   }
 }
 
