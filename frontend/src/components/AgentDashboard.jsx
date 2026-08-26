@@ -39,23 +39,41 @@ export default function AgentDashboard({ setActiveTab }) {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [dashRes, decRes] = await Promise.all([
-        api.get('/agent-orchestrator/dashboard'),
-        api.get('/agent-orchestrator/decisions?limit=8'),
-      ]);
-
-      if (dashRes.data.success) {
-        const data = dashRes.data.data;
+      const res = await api.get('/agent-orchestrator/dashboard');
+      if (res.data.success && res.data.data) {
+        const data = res.data.data;
         setConfig(data.config);
         setQuarterStatus(data.quarter_status);
         setInsights(data.recent_insights || []);
-      }
-
-      if (decRes.data.success) {
-        setDecisions(decRes.data.decisions || []);
+        setDecisions(data.recent_decisions || []);
+        return;
       }
     } catch (err) {
-      console.error('Error fetching dashboard data:', err);
+      console.warn('[AgentDashboard] Aggregated endpoint fallback:', err.message);
+    }
+
+    try {
+      const [cfgRes, qRes, decRes, insRes] = await Promise.allSettled([
+        api.get('/agent-orchestrator/config'),
+        api.get('/agent-orchestrator/quarter/status'),
+        api.get('/agent-orchestrator/decisions?limit=8'),
+        api.get('/agent-orchestrator/insights'),
+      ]);
+
+      if (cfgRes.status === 'fulfilled' && cfgRes.value.data.success) {
+        setConfig(cfgRes.value.data.config);
+      }
+      if (qRes.status === 'fulfilled' && qRes.value.data.success) {
+        setQuarterStatus(qRes.value.data);
+      }
+      if (decRes.status === 'fulfilled' && decRes.value.data.success) {
+        setDecisions(decRes.value.data.decisions || []);
+      }
+      if (insRes.status === 'fulfilled' && insRes.value.data.success) {
+        setInsights(insRes.value.data.insights || []);
+      }
+    } catch (fallbackErr) {
+      console.error('[AgentDashboard] Error fetching fallback data:', fallbackErr);
     } finally {
       setLoading(false);
     }
@@ -455,6 +473,71 @@ export default function AgentDashboard({ setActiveTab }) {
           </div>
         )}
       </div>
+
+      {/* Knowledge Insights from Closed-Loop Learning Layer */}
+      {insights.length > 0 && (
+        <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800/80 space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <h3 className="text-sm font-bold text-slate-200">
+                Wawasan Pembelajaran AI (Knowledge Layer)
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500">{insights.length} Wawasan Aktif</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {insights.map((ins, idx) => (
+              <div key={idx} className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+                  <span className="truncate">{ins.insight_type || 'Wawasan Pola'}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {(ins.confidence_score ? `${Math.round(ins.confidence_score * 100)}%` : 'AI Learned')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">{ins.summary || ins.finding}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Navigation Hub */}
+      {setActiveTab && (
+        <div className="p-5 rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-center sm:text-left">
+            <h4 className="text-xs font-bold text-slate-200">Navigasi Modul Agen Otonom</h4>
+            <p className="text-[11px] text-slate-400">Akses cepat papan status produk kuartal, laboratorium eksperimen, dan katalog</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 justify-center">
+            <button
+              onClick={() => setActiveTab('product_lifecycle')}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+            >
+              📊 Lifecycle Board
+            </button>
+            <button
+              onClick={() => setActiveTab('affiliate_products')}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+            >
+              🛍️ Katalog Produk
+            </button>
+            <button
+              onClick={() => setActiveTab('threads_marketing')}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+            >
+              🧵 Threads Hub
+            </button>
+            <button
+              onClick={() => setActiveTab('post_analytics')}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs font-semibold border border-indigo-500 transition-colors"
+            >
+              📈 Analitik Terpadu
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

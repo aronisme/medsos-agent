@@ -19,6 +19,75 @@ const { diagnoseProductPerformance } = require('../services/agent/diagnosticServ
 router.use(authRequired);
 
 /**
+ * GET /api/agent-orchestrator/dashboard
+ * Aggregated dashboard payload for Agent Control Center & Auto-Pilot Hub
+ */
+router.get('/dashboard', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const currentQuarter = getCurrentQuarter();
+
+    const [config, insights, decisions, prodSnap, postAnalyticsSnap] = await Promise.all([
+      getAgentConfig(userId),
+      getActiveKnowledgeInsights(userId).catch(() => []),
+      getProductDecisions(userId, null, 8).catch(() => []),
+      db.collection('affiliate_products').where('user_id', '==', userId).get().catch(() => ({ docs: [] })),
+      db.collection('post_analytics').where('user_id', 'in', [userId, 'system']).get().catch(() => ({ docs: [] }))
+    ]);
+
+    const products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    let totalQuarterViews = 0;
+    let totalQuarterClicks = 0;
+
+    products.forEach(p => {
+      if (p.quarterly_summary) {
+        totalQuarterViews += p.quarterly_summary.total_views || 0;
+        totalQuarterClicks += p.quarterly_summary.total_clicks || 0;
+      }
+    });
+
+    let totalGlobalViews = 0;
+    let totalGlobalClicks = 0;
+
+    postAnalyticsSnap.docs.forEach(doc => {
+      const d = doc.data();
+      const views = Number(d.metrics?.views) || Number(d.metrics?.reach) || 0;
+      const clicks = Number(d.affiliate?.human_clicks) || Number(d.affiliate?.total_clicks) || 0;
+      totalGlobalViews += views;
+      totalGlobalClicks += clicks;
+    });
+
+    const finalViews = Math.max(totalQuarterViews, totalGlobalViews);
+    const finalClicks = Math.max(totalQuarterClicks, totalGlobalClicks);
+    const avgQuarterCtr = finalViews > 0
+      ? Number(((finalClicks / finalViews) * 100).toFixed(2))
+      : (finalClicks > 0 ? 100 : 0);
+
+    const quarterStatus = {
+      current_quarter: currentQuarter,
+      total_products: products.length,
+      total_views: finalViews,
+      total_clicks: finalClicks,
+      avg_ctr: avgQuarterCtr
+    };
+
+    res.json({
+      success: true,
+      data: {
+        config,
+        quarter_status: quarterStatus,
+        recent_insights: insights,
+        recent_decisions: decisions
+      }
+    });
+  } catch (err) {
+    console.error('[GET /agent-orchestrator/dashboard Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/agent/cycle/run
  * Memicu 1 putaran siklus otonom secara langsung
  */
