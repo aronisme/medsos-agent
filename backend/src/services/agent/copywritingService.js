@@ -48,6 +48,85 @@ function extractNaturalReference(rawTitle = '', category = '') {
 }
 
 /**
+ * Mengonversi harga e-commerce mentah menjadi kisaran psikologis percakapan manusia
+ * Menghilangkan angka presisi (seperti "Rp 84.498") dan menjaga curiosity gap pembeli
+ * @param {number|string} rawPrice
+ * @param {string|number} [discount]
+ * @returns {{ displayPhrase: string, shouldMentionPrice: boolean, priceCategory: string, instruction: string }}
+ */
+function getConversationalPriceInfo(rawPrice, discount = null) {
+  const price = Number(rawPrice) || 0;
+  if (price <= 0) {
+    return {
+      displayPhrase: 'promo spesial',
+      shouldMentionPrice: false,
+      priceCategory: 'Promo Terjangkau',
+      instruction: 'Jangan sebut angka harga sama sekali. Fokus ke manfaat dan daya tarik produk.'
+    };
+  }
+
+  if (price < 10000) {
+    return {
+      displayPhrase: 'cuma beberapa ribu perak',
+      shouldMentionPrice: true,
+      priceCategory: 'Super Murah (<10rb)',
+      instruction: 'Sebut kisaran santai seperti "cuma beberapa ribu perak" atau "di bawah 10rb". DILARANG menulis angka rupiah presisi.'
+    };
+  }
+
+  if (price < 20000) {
+    return {
+      displayPhrase: 'cuma 10 ribuan',
+      shouldMentionPrice: true,
+      priceCategory: 'Budget Murah (10rb - 20rb)',
+      instruction: 'Sebut kisaran santai seperti "cuma 10 ribuan", "belasan ribu aja", atau "gak sampe 20rb". DILARANG menulis angka rupiah presisi (contoh dilarang: Rp11.980).'
+    };
+  }
+
+  if (price < 50000) {
+    const round10 = Math.floor(price / 10000) * 10;
+    return {
+      displayPhrase: `cuma ${round10} ribuan`,
+      shouldMentionPrice: true,
+      priceCategory: `Budget Terjangkau (${round10}rb - 50rb)`,
+      instruction: `Sebut kisaran santai seperti "cuma ${round10} ribuan" atau "gak sampe 50rb". DILARANG menulis angka rupiah presisi.`
+    };
+  }
+
+  if (price < 100000) {
+    return {
+      displayPhrase: 'di bawah 100rb',
+      shouldMentionPrice: false,
+      priceCategory: 'Menengah Ringan (50rb - 100rb)',
+      instruction: 'JANGAN sebut angka rupiah presisi! Cukup sebut frasa umum seperti "di bawah 100rb", "cuma puluhan ribu", atau "ramah di kantong" agar calon pembeli penasaran dan mengklik link untuk cek langsung.'
+    };
+  }
+
+  // Harga >= 100.000 (Mid/High Tier)
+  return {
+    displayPhrase: 'ramah di kantong untuk kualitasnya',
+    shouldMentionPrice: false,
+    priceCategory: 'Premium / Eksklusif (>100rb)',
+    instruction: 'DILARANG KERAS menyebutkan angka harga rupiah sama sekali! Gunakan penekanan kualitas/value (contoh: "worth it banget buat kualitasnya", "vibesnya keliatan mewah", "jauh lebih hemat daripada beli di mall", "lagi ada diskon spesial") agar pembeli terdorong untuk membuka link Shopee.'
+  };
+}
+
+/**
+ * Sanitasi teks jika AI secara tidak sengaja memunculkan angka rupiah mentah / persentase kaku
+ */
+function sanitizeRawPriceMentions(text = '') {
+  if (!text) return '';
+  return String(text)
+    // Ubah "Harganya cuma Rp 84.498" -> "Harganya ramah di kantong"
+    .replace(/harganya\s+cuma\s+rp\s*[\d\.\,]+/gi, 'harganya ramah di kantong')
+    .replace(/harganya\s+rp\s*[\d\.\,]+/gi, 'harganya ramah di kantong')
+    .replace(/harga\s*(promo|diskon)?\s*:\s*rp\s*[\d\.\,]+/gi, 'lagi ada promo spesial')
+    .replace(/\brp\s*\d{1,3}(\.\d{3})+/gi, 'ramah di kantong')
+    .replace(/\bpas\s+diskon\s+\d+%/gi, 'pas lagi diskon')
+    .replace(/\bdiskon\s+\d+%/gi, 'lagi promo diskon');
+}
+
+/**
  * Menghapus duplikasi hashtag yang identik
  */
 function deduplicateHashtags(text = '') {
@@ -71,7 +150,7 @@ function deduplicateHashtags(text = '') {
 }
 
 /**
- * Sanitasi teks caption: hapus tanda bintang markdown (*, **), header (#), dan duplikasi hashtag
+ * Sanitasi teks caption: hapus tanda bintang markdown (*, **), header (#), duplikasi hashtag, dan angka harga bot
  */
 function cleanCaptionText(text = '') {
   if (!text) return '';
@@ -83,7 +162,8 @@ function cleanCaptionText(text = '') {
     .replace(/^#+\s+/gm, '')
     .trim();
 
-  return deduplicateHashtags(cleaned);
+  const noDuplicateHashtags = deduplicateHashtags(cleaned);
+  return sanitizeRawPriceMentions(noDuplicateHashtags);
 }
 
 /**
@@ -112,13 +192,17 @@ PANTANGAN MUTLAK (ANTI-ROBOT & ANTI-BOT LAWS):
    - "Kenapa harus checkout..."
    - "Spesifikasi produk..."
    - "Harga promo: Rp..."
-2. DILARANG MEMBUAT DAFTAR BULLET POINTS KAKU (seperti "• Poin 1", "• Poin 2", "1.", "2."). Jadikan penjelasan keunggulan menyatu ke dalam kalimat percakapan narasi yang natural!
-3. DILARANG MENYISIPKAN JUDUL E-COMMERCE PANJANG MENTAH. Gunakan sebutan alami yang ringkas (misal: "flatshoes ini", "cardigan rajut ini", "wadah sabun ini").
-4. DILARANG menggunakan tanda bintang ** atau * atau format markdown apapun. Tulis langsung teks polos bersih.
-5. Panjang Teks:
+2. DILARANG MENULIS ANGKA HARGA RUPIAH PRESISI / SPESIFIK (seperti "Rp 84.498", "Rp11.980", "Rp63.000", atau "diskon 31%").
+   - Ini adalah ciri bot e-commerce yang merusak konversi dan membuat calon pembeli kehilangan rasa penasaran sebelum mengeklik link!
+   - Untuk barang murah (<50rb): Gunakan sebutan kisaran percakapan santai (contoh: "cuma 10 ribuan", "belasan ribu aja", "gak sampe 30rb").
+   - Untuk barang di atas 50rb / bernilai sedang-tinggi: JANGAN SEBUT ANGKA SAMA SEKALI! Bangun rasa penasaran (curiosity gap) dengan memuji value dan kualitasnya (contoh: "worth it banget buat kualitasnya", "vibesnya keliatan mewah", "harganya masih ramah di kantong", "jauh lebih hemat daripada beli di mall").
+3. DILARANG MEMBUAT DAFTAR BULLET POINTS KAKU (seperti "• Poin 1", "• Poin 2", "1.", "2."). Jadikan penjelasan keunggulan menyatu ke dalam kalimat percakapan narasi yang natural!
+4. DILARANG MENYISIPKAN JUDUL E-COMMERCE PANJANG MENTAH. Gunakan sebutan alami yang ringkas (misal: "flatshoes ini", "cardigan rajut ini", "wadah sabun ini").
+5. DILARANG menggunakan tanda bintang ** atau * atau format markdown apapun. Tulis langsung teks polos bersih.
+6. Panjang Teks:
    - Threads: Ringkas & padat, target 120 - 350 karakter (maksimal aman API < 450 karakter).
    - Facebook: Storytelling mengalir 200 - 500 karakter.
-6. ${isThreads ? 'ZERO HASHTAG CLUTTER: DILARANG membuat tumpukan hashtag di Threads.' : 'Gunakan maksimal 2-3 hashtag relevan di akhir.'}
+7. ${isThreads ? 'ZERO HASHTAG CLUTTER: DILARANG membuat tumpukan hashtag di Threads.' : 'Gunakan maksimal 2-3 hashtag relevan di akhir.'}
 
 Keluarkan output HANYA dalam format JSON valid:
 {
@@ -170,6 +254,7 @@ async function generatePostContent({
 
     const activeAngle = angle || strategy.angle || 'Problem-Agitate-Solution';
     const naturalProductRef = extractNaturalReference(product.title, profile?.niche);
+    const priceInfo = getConversationalPriceInfo(product.price, product.discount);
 
     // 2. Susun Prompt Spesifik
     const systemPrompt = buildSystemPrompt({
@@ -178,15 +263,11 @@ async function generatePostContent({
       archetype: strategy.archetype
     });
 
-    const priceFormatted = Number(product.price || 0) > 0 
-      ? `Rp ${Number(product.price).toLocaleString('id-ID')}` 
-      : 'Promo Terjangkau';
-
     const userPrompt = [
       `Produk: ${product.title}`,
       `Sebutan Alami Produk: ${naturalProductRef}`,
       `Niche: ${profile?.niche || 'Umum'}`,
-      `Harga: ${priceFormatted} ${product.discount ? `(Diskon ${product.discount})` : ''}`,
+      `Panduan Harga Psikologis: ${priceInfo.instruction} (${priceInfo.shouldMentionPrice ? `Boleh gunakan kisaran: "${priceInfo.displayPhrase}"` : 'JANGAN sebut angka rupiah, fokus ke value & curiosity'})`,
       `Keunggulan Nyata: ${(profile?.usp || []).slice(0, 3).join(', ')}`,
       `Pain Point yang Diselesaikan: ${(profile?.pain_points || []).slice(0, 2).join(', ')}`,
       `Waktu Tayang: Sesi ${sessionInfo.session || 'Siang'} (${sessionInfo.hour || 12}:00 WIB)`,
@@ -217,18 +298,19 @@ async function generatePostContent({
       console.warn(`[generatePostContent] AI call warning: ${aiErr.message}. Menggunakan fallback organik.`);
     }
 
-    // Emergency Fallback Organik jika AI offline
+    // Emergency Fallback Organik jika AI offline (Human Ballpark Price Framing)
     if (!parsedCopy || !parsedCopy.caption) {
+      const priceMention = priceInfo.shouldMentionPrice ? `harganya ${priceInfo.displayPhrase} doang` : 'kualitasnya beneran juara dan ramah di kantong';
       if (isThreads) {
         parsedCopy = {
-          caption: `IN THIS ECONOMY ‼️ 😭 nemu ${naturalProductRef} yang vibesnya keliatan mahal tapi harganya cuma ${priceFormatted} doang, cakep parah 🤌✨`,
+          caption: `IN THIS ECONOMY ‼️ 😭 nemu ${naturalProductRef} yang vibesnya keliatan mahal tapi ${priceMention}, cakep parah 🤌✨`,
           raw_hook: `IN THIS ECONOMY ‼️ 😭`,
           cta_type: isThreadsNoMedia ? 'link_card_cta' : 'soft_cta',
           first_reply_intro: 'Spill link tokonya di sini ya 👇'
         };
       } else {
         parsedCopy = {
-          caption: `Rekomendasi ${naturalProductRef} yang beneran bikin aktivitas harian jadi lebih simpel dan hemat. Harganya cuma ${priceFormatted} dengan kualitas yang juara ✨`,
+          caption: `Rekomendasi ${naturalProductRef} yang beneran bikin aktivitas harian jadi lebih simpel dan hemat dengan kualitas yang juara ✨`,
           raw_hook: `Rekomendasi ${naturalProductRef} hemat!`,
           cta_type: 'direct_link_cta',
           first_reply_intro: 'Link produk original ada di kolom komentar 👇'

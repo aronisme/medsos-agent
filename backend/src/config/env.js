@@ -14,8 +14,8 @@ const env = {
     .split(',')
     .map(k => k.trim())
     .filter(Boolean),
-  groqModelPrimary: process.env.GROQ_MODEL_PRIMARY || 'openai/gpt-oss-120b',
-  groqModelFast: process.env.GROQ_MODEL_FAST || 'openai/gpt-oss-20b',
+  groqModelPrimary: process.env.GROQ_MODEL_PRIMARY || 'qwen/qwen3.8-27b',
+  groqModelFast: process.env.GROQ_MODEL_FAST || 'qwen/qwen3.6-27b',
   xkiroApiKey: process.env.XKIRO_API_KEY || '',
   xkiroBaseUrl: process.env.XKIRO_BASE_URL || 'https://api.xkiro.com/v1',
   xkiroModel: process.env.XKIRO_MODEL || 'qwen/qwen3.8-max',

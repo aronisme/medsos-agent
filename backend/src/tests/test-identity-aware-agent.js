@@ -172,6 +172,17 @@ async function runTests() {
   assert(canonicalizePersona('invalid_persona_xyz') === 'ai_adaptive', 'Falls back invalid persona to "ai_adaptive"');
   assert(CANONICAL_PERSONAS.length === 9, 'Contains all 9 canonical personas');
 
+  // -------------------------------------------------------------
+  // TEST H: Conversational Price Framing & Raw Price Sanitization
+  // -------------------------------------------------------------
+  console.log('\n▶️ [TEST H] Conversational Psychological Price Framing & Sanitization');
+  const roboticPriceText = 'Rekomendasi tas ini yang beneran hemat. Harganya cuma Rp 84.498 dengan kualitas juara pas diskon 31% ✨';
+  const priceRobotCheck = detectRobotClichés(roboticPriceText);
+  assert(priceRobotCheck.is_robot === true && priceRobotCheck.reasons.some(r => r.includes('Rp 84.498') || r.includes('diskon')), 'Detects robotic raw price patterns (Rp 84.498)', JSON.stringify(priceRobotCheck.reasons));
+
+  const sanitizedPriceText = cleanCaptionText(roboticPriceText);
+  assert(!sanitizedPriceText.includes('84.498') && !sanitizedPriceText.includes('31%'), 'Sanitizes raw robotic price into conversational human phrase', `Got: "${sanitizedPriceText}"`);
+
   console.log('\n================================================================');
   console.log(`🏁 TEST RESULTS: ${passedTests}/${totalTests} TESTS PASSED (${((passedTests / totalTests) * 100).toFixed(1)}%)`);
   console.log('================================================================\n');

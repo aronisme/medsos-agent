@@ -24,7 +24,10 @@ const ROBOT_CLICHE_PATTERNS = [
   /kenapa\s+(harus|wajib)\s+(checkout|beli|punya)/i,
   /alasan\s+(harus|wajib)\s+punya/i,
   /mengapa\s+(harus|memilih)/i,
-  /harga\s+(promo|diskon)\s*:\s*rp/i,
+  /harga\s*(promo|diskon)?\s*:\s*rp/i,
+  /harganya\s+(cuma\s+)?rp\s*\d+/i,
+  /\brp\s*\d{1,3}(\.\d{3})+/i, // contoh: Rp 84.498, Rp11.980, Rp63.000
+  /\bpas\s+diskon\s+\d+%/i,     // contoh: pas diskon 31%
   /dapatkan\s+sekarang\s+juga\s+di/i,
   /segera\s+amankan\s+slot/i,
   /rekomendasi\s+racun\s+shopee\s+yang\s+wajib\s+kamu\s+punya/i,
