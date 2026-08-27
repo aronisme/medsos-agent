@@ -48,9 +48,9 @@ export default function TemplateManager({ onApplyTemplate }) {
     if (!window.confirm('Yakin hapus template ini?')) return;
     try {
       await api.delete(`/templates/${id}`);
-      setTemplates(templates.filter((t) => t.id !== id));
+      setTemplates(prev => prev.filter((t) => t.id !== id));
     } catch (err) {
-      alert('Gagal menghapus template.');
+      alert('Gagal menghapus template: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -89,46 +89,60 @@ export default function TemplateManager({ onApplyTemplate }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {templates.map((tpl) => (
-            <div
-              key={tpl.id}
-              className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between"
-            >
-              <div>
-                <h3 className="font-bold text-base text-white mb-2">{tpl.title}</h3>
-                <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-4 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  {tpl.content}
-                </p>
-              </div>
+          {templates.map((tpl) => {
+            const displayTitle = tpl.title || tpl.name || 'Template';
+            const isAi = Boolean(tpl.is_ai_template);
+            return (
+              <div
+                key={tpl.id}
+                className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h3 className="font-bold text-base text-white truncate">{displayTitle}</h3>
+                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold shrink-0 border ${
+                      isAi 
+                        ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' 
+                        : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                    }`}>
+                      {isAi ? '🤖 AI Template' : '👤 Custom'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-4 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    {tpl.content}
+                  </p>
+                </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
-                <button
-                  onClick={() => handleCopy(tpl.id, tpl.content)}
-                  className="p-1.5 text-xs text-slate-400 hover:text-white rounded-lg flex items-center gap-1 hover:bg-slate-800"
-                >
-                  {copiedId === tpl.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedId === tpl.id ? 'Tersalin' : 'Salin'}</span>
-                </button>
-
-                <div className="flex items-center gap-2">
-                  {onApplyTemplate && (
-                    <button
-                      onClick={() => onApplyTemplate(tpl.content, tpl.title)}
-                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold"
-                    >
-                      Gunakan
-                    </button>
-                  )}
+                <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
                   <button
-                    onClick={() => handleDelete(tpl.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800"
+                    onClick={() => handleCopy(tpl.id, tpl.content)}
+                    className="p-1.5 text-xs text-slate-400 hover:text-white rounded-lg flex items-center gap-1 hover:bg-slate-800"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {copiedId === tpl.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedId === tpl.id ? 'Tersalin' : 'Salin'}</span>
                   </button>
+
+                  <div className="flex items-center gap-2">
+                    {onApplyTemplate && (
+                      <button
+                        onClick={() => onApplyTemplate(tpl.content, displayTitle)}
+                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold"
+                      >
+                        Gunakan
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(tpl.id)}
+                      title="Hapus template"
+                      className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

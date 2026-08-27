@@ -10,15 +10,29 @@ router.get('/', async (req, res) => {
   try {
     const [snapUser, snapAgent] = await Promise.all([
       db.collection('templates').where('user_id', '==', req.user.id).get(),
-      db.collection('post_templates').get(),
+      db.collection('post_templates').where('is_active', '==', true).get(),
     ]);
 
-    const userRows = snapUser.docs.map(doc => ({ id: doc.id, ...doc.data(), is_custom: true }));
+    const userRows = snapUser.docs.map(doc => {
+      const d = doc.data();
+      return {
+        id: doc.id,
+        title: d.title || d.name || 'Template Caption',
+        name: d.name || d.title || 'Template Caption',
+        content: d.content || d.structure || '',
+        category: d.category || 'Universal',
+        angle: d.angle || 'General',
+        is_custom: true,
+        created_at: d.created_at || new Date().toISOString()
+      };
+    });
+
     const agentRows = snapAgent.docs.map(doc => {
       const d = doc.data();
       return {
         id: doc.id,
-        name: d.name || 'AI Template',
+        title: d.name || d.title || 'AI Strategy Template',
+        name: d.name || d.title || 'AI Strategy Template',
         content: d.structure || d.content || '',
         category: d.category || 'Universal',
         angle: d.angle || 'General',
@@ -42,13 +56,15 @@ router.get('/', async (req, res) => {
 // POST /api/templates
 router.post('/', async (req, res) => {
   try {
-    const { name, content, category, angle } = req.body || {};
-    if (!name || !content) return res.status(400).json({ error: 'name dan content wajib diisi.' });
+    const { name, title, content, category, angle } = req.body || {};
+    const finalName = name || title;
+    if (!finalName || !content) return res.status(400).json({ error: 'Judul dan isi template wajib diisi.' });
     
     const now = new Date().toISOString();
     const newTemplate = {
       user_id: req.user.id,
-      name: String(name),
+      name: String(finalName),
+      title: String(finalName),
       content: String(content),
       category: category || 'Universal',
       created_at: now,
@@ -57,11 +73,12 @@ router.post('/', async (req, res) => {
     
     const docRef = await db.collection('templates').add(newTemplate);
 
-    // Sync ke post_templates agar AI Agent bisa langsung memakai template buatan user
+    // Sync ke post_templates agar AI Agent juga bisa memakainya
     await db.collection('post_templates').doc(docRef.id).set({
       id: docRef.id,
       user_id: req.user.id,
-      name: String(name),
+      name: String(finalName),
+      title: String(finalName),
       structure: String(content),
       category: category || 'Universal',
       angle: angle || 'Custom User Template',
@@ -78,26 +95,52 @@ router.post('/', async (req, res) => {
   }
 });
 
-
 // PUT /api/templates/:id
 router.put('/:id', async (req, res) => {
   try {
-    const docRef = db.collection('templates').doc(req.params.id);
-    const doc = await docRef.get();
-    
-    if (!doc.exists || doc.data().user_id !== req.user.id) {
+    const templateId = req.params.id;
+    const { name, title, content, category, angle } = req.body || {};
+    const finalName = name || title;
+
+    let updated = false;
+
+    // 1. Cek di collection templates
+    const userDocRef = db.collection('templates').doc(templateId);
+    const userDoc = await userDocRef.get();
+    if (userDoc.exists) {
+      const existing = userDoc.data();
+      const updateData = {
+        name: finalName ?? existing.name ?? existing.title,
+        title: finalName ?? existing.title ?? existing.name,
+        content: content ?? existing.content,
+        updated_at: new Date().toISOString()
+      };
+      await userDocRef.update(updateData);
+      updated = true;
+    }
+
+    // 2. Cek di collection post_templates
+    const agentDocRef = db.collection('post_templates').doc(templateId);
+    const agentDoc = await agentDocRef.get();
+    if (agentDoc.exists) {
+      const existing = agentDoc.data();
+      const updateData = {
+        name: finalName ?? existing.name ?? existing.title,
+        title: finalName ?? existing.title ?? existing.name,
+        structure: content ?? existing.structure ?? existing.content,
+        category: category ?? existing.category ?? 'Universal',
+        angle: angle ?? existing.angle ?? 'General',
+        updated_at: new Date().toISOString()
+      };
+      await agentDocRef.update(updateData);
+      updated = true;
+    }
+
+    if (!updated) {
       return res.status(404).json({ error: 'Template tidak ditemukan.' });
     }
-    
-    const existing = doc.data();
-    const { name, content } = req.body || {};
-    const updateData = {
-      name: name ?? existing.name,
-      content: content ?? existing.content
-    };
-    
-    await docRef.update(updateData);
-    res.json({ template: { id: doc.id, ...existing, ...updateData } });
+
+    res.json({ success: true, message: 'Template berhasil diperbarui.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -106,15 +149,31 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/templates/:id
 router.delete('/:id', async (req, res) => {
   try {
-    const docRef = db.collection('templates').doc(req.params.id);
-    const doc = await docRef.get();
-    
-    if (!doc.exists || doc.data().user_id !== req.user.id) {
+    const templateId = req.params.id;
+    let deleted = false;
+
+    // 1. Hapus dari collection templates (user custom)
+    const userDocRef = db.collection('templates').doc(templateId);
+    const userDoc = await userDocRef.get();
+    if (userDoc.exists) {
+      await userDocRef.delete();
+      deleted = true;
+    }
+
+    // 2. Hapus atau nonaktifkan dari collection post_templates (agent & custom synced)
+    const agentDocRef = db.collection('post_templates').doc(templateId);
+    const agentDoc = await agentDocRef.get();
+    if (agentDoc.exists) {
+      // Hapus dokumen atau tandai is_active: false
+      await agentDocRef.delete();
+      deleted = true;
+    }
+
+    if (!deleted) {
       return res.status(404).json({ error: 'Template tidak ditemukan.' });
     }
-    
-    await docRef.delete();
-    res.json({ success: true });
+
+    res.json({ success: true, message: 'Template berhasil dihapus.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
