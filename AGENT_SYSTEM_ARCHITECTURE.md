@@ -1,6 +1,6 @@
 # 🤖 Arsitektur Sistem AI Autonomous Marketing Agent
 
-Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeline*), state machine siklus produk, logika pengambilan keputusan, integrasi multi-platform, strategi publikasi dua fase (*Two-Phase First-Reply*), serta panduan teknis bagi developer agar pengembangan sistem agen di masa depan tetap stabil, sinkron, dan bebas dari *bug* keterputusan alur (*broken pipeline*).
+Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeline*), state machine siklus produk, logika pengambilan keputusan, sistem **Identity-Aware Content Agent & Multi-Account Isolation**, integrasi multi-platform, strategi publikasi dua fase (*Two-Phase First-Reply*), serta panduan teknis bagi developer agar pengembangan sistem agen di masa depan tetap stabil, sinkron, dan bebas dari *bug* keterputusan alur (*broken pipeline*).
 
 ---
 
@@ -10,10 +10,10 @@ Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeli
 3. [Peta Struktur Berkas & Modul](#3-peta-struktur-berkas--modul)
 4. [Deep-Dive 7 Pilar Agen Otonom](#4-deep-dive-7-pilar-agen-otonom)
    - [Pilar 1: Product Intelligence Profiler](#pilar-1-product-intelligence-profiler)
-   - [Pilar 2: Kurasi Media & Anti-Reuse Per Platform](#pilar-2-kurasi-media--anti-reuse-per-platform)
-   - [Pilar 3: Contextual Bandit Copywriting & Threads First-Reply Engine](#pilar-3-contextual-bandit-copywriting--threads-first-reply-engine)
-   - [Pilar 4: Semantic Content Fingerprinting](#pilar-4-semantic-content-fingerprinting)
-   - [Pilar 5: Dynamic Prime-Time Grid Scheduler](#pilar-5-dynamic-prime-time-grid-scheduler)
+   - [Pilar 2: Kurasi Media & Dual-Layer Multi-Account Isolation](#pilar-2-kurasi-media--dual-layer-multi-account-isolation)
+   - [Pilar 3: Identity-Aware Copywriting, Creator Archetypes & Contextual MAB](#pilar-3-identity-aware-copywriting-creator-archetypes--contextual-mab)
+   - [Pilar 4: Two-Layer Anti-Robot Detector & 3-Space Cross-Account Diversity](#pilar-4-two-layer-anti-robot-detector--3-space-cross-account-diversity)
+   - [Pilar 5: Dynamic Prime-Time Grid Scheduler & Niche Alignment](#pilar-5-dynamic-prime-time-grid-scheduler--niche-alignment)
    - [Pilar 6: Product Post Memory Ledger & Lifecycle State Machine](#pilar-6-product-post-memory-ledger--lifecycle-state-machine)
    - [Pilar 7: Diagnostic Root-Cause Analyzer & Decision Stream](#pilar-7-diagnostic-root-cause-analyzer--decision-stream)
 5. [Arsitektur Publikasi Dua Fase (Two-Phase State Machine & Idempotency)](#5-arsitektur-publikasi-dua-fase-two-phase-state-machine--idempotency)
@@ -27,7 +27,8 @@ Dokumentasi komprehensif ini merinci arsitektur lengkap, alur data (*data pipeli
 
 ## 1. Filosofi & Ringkasan Eksekutif
 
-Sistem **AI Autonomous Marketing Agent** dibangun dengan konsep *Closed-Loop Continuous Learning* (Siklus Pembelajaran Tertutup Tanpa Intervensi Manual). 
+Sistem **AI Autonomous Marketing Agent** dibangun dengan konsep *Closed-Loop Continuous Learning* (Siklus Pembelajaran Tertutup Tanpa Intervensi Manual) yang berlandaskan pada prinsip:
+> **"User controls Identity. AI controls Expression. Data controls Optimization."**
 
 Tujuan utama agen adalah:
 1. **Mengotomatisasi Penuh (0-Touch Autopilot)**: Memilih produk Shopee dari katalog, menyusun materi visual, meracik copywriting berdasarkan sudut pandang terbukti, menjadwalkan ke jam-jam emas (*Peak Golden Hours*), hingga mempublikasikan ke Facebook dan Threads.
@@ -37,8 +38,12 @@ Tujuan utama agen adalah:
    - **Threads (Dual-Mode)**:
      - **Mode 1: Visual Media + First-Reply**: Copywriting santai tanpa hashtag, media foto/video terlampir, dan tautan afiliasi disajikan otomatis pada **balasan/komentar pertama (*first reply*)** menggunakan `reply_to_id`.
      - **Mode 2: No-Media + Native Link Card Preview**: Postingan teks murni dengan tautan pendek langsung di caption. Crawler Meta Threads secara otomatis merender kartu thumbnail, judul, harga, dan rating Shopee interaktif (*0-media upload*), dengan `first_reply` dinonaktifkan otomatis.
-4. **Niche-Aligned Delivery & Anti-Pollution**: Agen memvalidasi kesesuaian kategori produk dengan `allowed_niches` pada akun, menjamin tidak ada foto/video yang dipakai berulang pada platform yang sama, serta menolak teks yang memiliki kemiripan semantik $> 85\%$.
-5. **Lifecycle Governance (Quarterly Stop)**: Agen secara proaktif mendiagnosis produk yang berkinerja buruk dan mengistirahatkannya (`STOP_FOR_QUARTER`) agar slot posting dialokasikan ke produk berpotensi tinggi.
+4. **Isolasi Lintas Akun & Anti-Robot (Identity-Aware Content Agent)**:
+   - Pengguna memilih Persona Identitas Akun (*Bestie Hype, Aesthetic Minimalist, Witty Curhat, dll.*).
+   - AI menulis menggunakan 6 Arketipe Penceritaan Organik dengan sebutan produk alami (*Natural Product Reference*), bebas dari format outline kaku dan frasa robotik klise AI.
+   - Media visual dan draf teks diisolasi secara real-time lintas akun dengan validasi diversitas 3 ruang (*Current Batch, Scheduled Posts, Recent Memories*).
+5. **Niche-Aligned Delivery & Anti-Pollution**: Agen memvalidasi kesesuaian kategori produk dengan `allowed_niches` pada akun, menjamin tidak ada foto/video yang dipakai berulang pada platform yang sama, serta menolak teks yang memiliki kemiripan semantik $> 65\%$.
+6. **Lifecycle Governance (Quarterly Stop)**: Agen secara proaktif mendiagnosis produk yang berkinerja buruk dan mengistirahatkannya (`STOP_FOR_QUARTER`) agar slot posting dialokasikan ke produk berpotensi tinggi.
 
 ---
 
@@ -57,26 +62,24 @@ flowchart TD
         D -->|AI Extraction| E[Niche, Target Persona, Pain Points, USP]
     end
 
-    subgraph SCHEDULER["3. Prime-Time Grid Scheduler & Niche Filter"]
+    subgraph SCHEDULER["3. Prime-Time Grid Scheduler & Identity Setup"]
         E --> F[orchestratorService]
         G[knowledge_insights] -->|Jam Emas WIB| F
-        H[social_accounts WHERE is_active=1] -->|Cek allowed_niches & threads_media_mode| F
+        H[social_accounts WHERE is_active=1] -->|Cek allowed_niches, content_persona_id & threads_media_mode| F
     end
 
-    subgraph CONTENT_GEN["4. Visual & Dual-Engine Copywriting"]
+    subgraph CONTENT_GEN["4. Visual Isolation & Direct AI Copywriting"]
         F --> I[mediaEvaluatorService]
-        I -->|Cek used_media_by_platform| J{threads_media_mode == no_media OR Media Habis?}
+        I -->|Dual-Layer & In-Cycle Reservation Lock| J{threads_media_mode == no_media OR Media Habis?}
         J -- Ya di Threads --> J1[Mode Teks Murni: media=[] link_preview_ready]
-        J -- Tidak --> J2[Max 2 Foto Segar / 1 Video Demo]
-        F --> K[templateService: Multi-Armed Bandit]
-        K -->|80% Top CTR / 20% Explore| L[Template Terpilih]
-        J1 & J2 & L --> M[copywritingService: Facebook vs Threads Dual-Mode]
-        M -->|Threads No-Media| N1[Caption memuat Link + first_reply.enabled=false]
-        M -->|Threads With-Media| N2[Caption percakapan + first_reply.enabled=true]
-        M -->|Facebook Single-Output| N3[Caption dengan Tautan Langsung]
-        N1 & N2 & N3 --> O[contentFingerprint]
-        O -->|Similarity < 85%| P[Simpan ke Koleksi posts status=scheduled]
-        O -->|Similarity >= 85%| Q[Reject & Kocok Ulang]
+        J -- Tidak --> J2[Max 2 Foto Segar / 1 Video Demo Terisolasi Akun]
+        F --> K[templateService: Contextual MAB Strategy]
+        K -->|Persona -> Archetype -> Angle -> CTA| L[Strategi Penceritaan Terpilih]
+        J1 & J2 & L --> M[copywritingService: Direct AI Generation]
+        M -->|Natural Reference & No-Bullet Rules| N[Draf Caption Organik]
+        N --> O[contentFingerprint: 2-Layer Anti-Robot & 3-Space Validator]
+        O -->|Similarity < 65% & Anti-Robot Pass| P[Simpan ke Koleksi posts status=scheduled]
+        O -->|Similarity >= 65% / Robot Pattern| Q[Reject & Kocok Ulang Kandidat]
     end
 
     subgraph TWO_PHASE_DISPATCH["5. Two-Phase Dispatcher & Analytics Sync"]
@@ -109,17 +112,17 @@ backend/src/
 │   ├── agent/
 │   │   ├── orchestratorService.js      # Otak orkestrator siklus otonom, alokasi slot dinamis & inventory
 │   │   ├── productIntelligenceService.js# Ekstraksi persona, pain points, & USP dari Shopee
-│   │   ├── mediaEvaluatorService.js    # Filter media anti-reuse per platform + no-media fallback Threads
-│   │   ├── templateService.js          # Pustaka template & Contextual Multi-Armed Bandit (MAB)
-│   │   ├── copywritingService.js       # Generator copy (Facebook Storytelling vs Threads Dual-Mode)
-│   │   ├── contentFingerprint.js       # Kalkulator kemiripan teks (Levenshtein / Jaccard / Cosine)
+│   │   ├── mediaEvaluatorService.js    # Filter media anti-reuse per platform & per akun + Real-time in-cycle lock
+│   │   ├── templateService.js          # Definisi 9 Persona, 6 Arketipe & Contextual Multi-Armed Bandit (MAB)
+│   │   ├── copywritingService.js       # Direct AI Generator (Natural Product References, Persona rules)
+│   │   ├── contentFingerprint.js       # Two-Layer Anti-Robot Detector & 3-Space Cross-Account Diversity Validator
 │   │   ├── productPostMemoryService.js # Buku besar memori postingan (product_post_memory) & skor dekomposisi
 │   │   ├── metricsCalculator.js        # Kalkulasi CTR, skor normalisasi, & evaluasi A/B testing
 │   │   ├── experimentService.js        # Pengelola eksperimen A/B testing hipotesis
 │   │   ├── diagnosticService.js        # Root-cause analyzer terhubung akun aktif (Traffic, Content, Offer, Product)
 │   │   ├── decisionLogger.js           # Logger transparansi keputusan AI (agent_decisions_log)
 │   │   ├── knowledgeSynthesizer.js     # Pembelajaran pola data menjadi wawasan (knowledge_insights)
-│   │   └── aiQueueService.js           # Lapisan wrapper pemanggilan OpenAI/Gemini/Deepseek dengan rate-limiter
+│   │   └── aiQueueService.js           # Lapisan wrapper pemanggilan OpenAI/Gemini/Groq/Mistral dengan rate-limiter
 │   ├── postAnalytics/
 │   │   ├── syncService.js              # Sinkronisasi analitik berkala Meta API & pelacak link via Database ID
 │   │   ├── normalizer.js               # Normalisasi metrik antar platform sosial media
@@ -138,7 +141,7 @@ backend/src/
 │   └── scheduler.js                    # Worker tunggal berkala (Cron / Google Apps Script trigger)
 └── routes/
     ├── agent-orchestrator.js           # REST API kontrol agen, status kuartal, & log keputusan
-    ├── accounts.js                     # CRUD akun sosial media, allowed_niches & threads_media_mode
+    ├── accounts.js                     # CRUD akun sosial media, allowed_niches, content_persona_id & threads_media_mode
     ├── affiliate.js & redirect.js      # Builder Shopee Affiliate & Shortlink Handler (/s/:code)
     └── affiliate-products.js           # CRUD inventori produk Shopee
 ```
@@ -165,44 +168,57 @@ backend/src/
 
 ---
 
-### Pilar 2: Kurasi Media & Anti-Reuse Per Platform
+### Pilar 2: Kurasi Media & Dual-Layer Multi-Account Isolation
 *File: `backend/src/services/agent/mediaEvaluatorService.js`*
 - **Aturan Ketat**:
-  1. Media yang **sudah pernah diposting pada platform tertentu (misal: Facebook)** disimpan pada `used_media_by_platform.facebook` dan **dilarang dipakai lagi di Facebook**.
-  2. Media tersebut **tetap boleh dipakai di platform lain (misal: Threads)** jika belum pernah digunakan di Threads.
+  1. **Dual-Layer Usage Tracking**: 
+     - `used_media_by_platform`: Media yang sudah pernah digunakan pada platform tertentu (misal FB) tidak boleh diulang di platform tersebut.
+     - `used_media_by_account`: Media yang sudah pernah diposting oleh akun tertentu dicatat per `account_id`.
+  2. **Real-Time In-Cycle Reservation Lock**: Foto/video yang dipilih oleh Akun A dalam satu siklus batch otonom langsung dikunci di memori, sehingga Akun B (walaupun sama-sama memposting produk yang sama) dijamin mendapatkan foto/video yang berbeda.
   3. Maksimal **1 Video Demo Segar** ATAU Maksimal **2 Foto Produk Bersih** per postingan visual.
   4. **Penanganan Khusus Threads (Native Link Card Preview Fallback)**:
-     - Jika mode akun/autopilot disetel ke `threadsMediaMode = 'no_media'`, atau jika stok foto/video segar produk telah habis di Threads, kurasi media mengembalikan `{ media_type: 'text', selected_media: [], no_fresh_media: false }`.
+     - Jika mode akun disetel ke `threadsMediaMode = 'no_media'`, atau jika stok foto/video segar produk telah habis di Threads, kurasi media mengembalikan `{ media_type: 'text', selected_media: [], no_fresh_media: false }`.
      - Produk tidak digagalkan/di-reject, melainkan diterbitkan dalam mode Teks Murni ber-link yang secara native memicu crawler Meta Threads untuk membuat kartu preview interaktif (*Link Card Preview*).
   5. Pada Facebook/Instagram, jika media habis, agen menolak kurasi (`no_fresh_media: true`) dan memilih produk lain.
 
 ---
 
-### Pilar 3: Contextual Bandit Copywriting & Threads First-Reply Engine
+### Pilar 3: Identity-Aware Copywriting, Creator Archetypes & Contextual MAB
 *Files: `backend/src/services/agent/templateService.js` & `backend/src/services/agent/copywritingService.js`*
-- **Algoritma Epsilon-Greedy**:
-  - **80% Eksploitasi**: Memilih template dengan CTR (*Click-Through Rate*) tertinggi untuk kombinasi `platform + objective`.
-  - **20% Eksplorasi**: Memilih template alternatif/baru secara acak untuk mencegah kejenuhan audiens.
-- **Kebijakan Gaya Penulisan Threads (Clean & Conversation-First)**:
-  - **Zero Hashtag Clutter**: Menghilangkan tumpukan hashtag tradisional (`#Shopee #RacunShopee` ditiadakan) agar teks tampil natural seperti percakapan organik.
-  - **6 Kelas CTA Dinamis**:
-    1. `conversation_cta`: Memantik opini / pertanyaan santai (*"menurut kalian mending peach apa matcha?"*).
-    2. `curiosity_cta`: Memancing penasaran (*"ternyata yang termurah justru yang ini 😭"*).
-    3. `soft_cta`: Menawarkan link secara halus (*"detailnya aku spill di reply ya 👇"*).
-    4. `direct_link_cta`: Ajakan link langsung (*"yang nanya link, aku drop di bawah 👇"*).
-    5. `link_card_cta`: CTA khusus mode Link Card Preview tanpa first reply (*"Cek promo obralnya langsung di link ini 🛒"*).
-    6. `no_cta`: Tanpa CTA sama sekali (murni relatable sharing / humor).
-  - **Panjang Teks Fleksibel**: Target gaya 150–350 karakter (maksimal aman API < 480 karakter).
-  - **Dual-Output**:
-    - **Mode With-Media**: Menghasilkan `caption` (postingan utama) dan `first_reply_text` (teks komentar balasan pertama yang memuat link afiliasi).
-    - **Mode No-Media**: Menghasilkan `caption` yang memuat tautan pendek langsung, dengan `first_reply_text = ''` (dinonaktifkan).
+- **Struktur Strategi Penceritaan**:
+  $$\text{Account Persona (User)} \longrightarrow \text{Story Archetype (AI)} \longrightarrow \text{Marketing Angle} \longrightarrow \text{CTA Class}$$
+- **9 Persona Kanonikal Akun**:
+  1. 💕 **Bestie Hype**: Casual, Playful, Gen Z slang & ekspresif (*"MAAF TERIAK 😭"*, *"KAAAK TOLONG 😭🤌"*).
+  2. 🌿 **Aesthetic Minimalist**: Kalem, elegan, fokus visual & rapi (*"effortless"*, *"clean look"*, *"flowy"*).
+  3. 😂 **Witty Curhat**: Humor relatable, cerita santai sehari-hari.
+  4. 🛍️ **Smart Bargain Hunter**: Fokus perbandingan harga murah vs kualitas mewah (*"IN THIS ECONOMY ‼️"*).
+  5. 🔍 **POV Reviewer**: Format POV jujur, demonstrasi praktis saat memakai produk.
+  6. ✨ **Soft Lifestyle**: Rekomendasi wishlist, outfit & dekor manis.
+  7. 🤏 **Relatable Everyday**: Sederhana, membumi, obrolan akrab sehari-hari.
+  8. 🧠 **Practical Life-Hack**: Solusi cerdas, tips bermanfaat & efisien.
+  9. 🤖 **AI Adaptive**: Kombinasi cerdas dinamis yang dipelajari AI.
+- **6 Arketipe Penceritaan Organik**:
+  `witty_question`, `emotional_reaction`, `pov_lifehack`, `value_shock`, `aesthetic_wishlist`, `honest_spill`.
+- **Direct AI Generation & Natural References**:
+  - Judul e-commerce mentah (*`[PROMO] [MALL ORI] Sandal Flatshoes Korea`*) diekstraksi menjadi sebutan percakapan alami (*`flatshoes ini`*, *`cardigan rajut ini`*, *`wadah sabun ini`*).
+  - Teks ditulis secara holistik oleh AI tanpa slot template buatan kaku (*`Solusi: {PRODUCT_NAME}`* ditiadakan).
+- **Multi-Armed Bandit (MAB)**: 80% memilih strategi dengan performa CTR rata-rata tertinggi (eksploitasi) dan 20% menguji varian strategi baru (eksplorasi).
 
 ---
 
-### Pilar 4: Semantic Content Fingerprinting
+### Pilar 4: Two-Layer Anti-Robot Detector & 3-Space Cross-Account Diversity
 *File: `backend/src/services/agent/contentFingerprint.js`*
-- **Tujuan**: Mencegah akun terkena penalti spam dari algoritma akibat teks caption yang terlalu mirip.
-- **Mekanisme**: Menghitung kemiripan menggunakan kombinasi **Jaccard Token Similarity** dan **Levenshtein Distance** terhadap postingan 7 hari terakhir. Jika tingkat kemiripan $\ge 85\%$, draf postingan otomatis ditolak (*rejected*) dan dikocok ulang.
+- **Two-Layer Anti-Robot Defense**:
+  - **Layer 1 (Blacklist Frasa Bot)**: Memblokir frasa klise robotik (*"Solusi terbaiknya"*, *"Keunggulan produk"*, *"Kenapa harus checkout"*, *"Spesifikasi"*).
+  - **Layer 2 (Structural AI Outline Detector)**: Memblokir dan meratakan format bullet points kaku (`• Poin 1`, `1. Poin 2`, `2. Poin 3`).
+- **Composite Diversity Scoring**:
+  - Menghitung skor kemiripan berbobot: Semantic Tokens (35%), Lexical N-Grams (25%), Structural length & lines (20%), Hook similarity (10%), CTA similarity (10%).
+- **Validasi Lintas 3 Ruang (*3-Space Cross-Account Check*)**:
+  Draf konten baru divalidasi terhadap:
+  1. **Current Batch**: Draf akun lain yang dibuat dalam siklus yang sama.
+  2. **Scheduled Posts**: Seluruh postingan status scheduled/draft milik pengguna di database.
+  3. **Recent Memories**: Postingan yang telah terbit dalam 7 hari terakhir.
+  Jika kemiripan komposit $\ge 65\%$, postingan ditolak (*rejected*) dan AI memilih strategi/kandidat lain.
 
 ---
 
@@ -333,8 +349,9 @@ interface SocialAccountDocument {
   page_name: string;
   page_id: string;
   is_active: boolean | number;
-  allowed_niches: string[];      // ['UNIVERSAL'] atau ['FASHION', 'BEAUTY']
+  allowed_niches: string[];      // ['UNIVERSAL'] atau ['FASHION_WOMEN', 'BEAUTY_SKINCARE']
   threads_media_mode?: 'auto' | 'no_media' | 'with_media'; // Khusus Threads
+  content_persona_id?: string;   // 'bestie_hype' | 'aesthetic_minimalist' | 'witty_curhat' | 'bargain_hunter' | 'pov_reviewer' | 'soft_lifestyle' | 'relatable_everyday' | 'practical_expert' | 'ai_adaptive'
 }
 ```
 
@@ -350,14 +367,22 @@ interface ProductPostMemory {
   reply_id_on_platform?: string; // ID first reply
   context_at_post: {
     platform: 'facebook' | 'threads';
+    account_id: string;
     account_name: string;
+    persona_id: string;          // e.g. 'bestie_hype'
+    persona_name: string;        // e.g. '💕 Bestie Hype'
+    archetype_id: string;        // e.g. 'emotional_reaction'
+    archetype_name: string;      // e.g. 'Emotional Reaction & Bestie Hype'
+    natural_product_reference: string; // e.g. 'flatshoes ini'
     shortlink_code: string;
     posting_hour: number;
     copy_angle: string;
     template_id: string;
-    media_type: 'image' | 'video';
+    template_name: string;
+    media_type: 'image' | 'video' | 'text';
     media_urls: string[];
     content_fingerprint: string;
+    caption_preview: string;
   };
   raw_metrics: {
     views: number;
@@ -371,7 +396,26 @@ interface ProductPostMemory {
 }
 ```
 
-### 4. `threads_post_context`
+### 4. `affiliate_products` (Cuplikan Pelacakan Media)
+```typescript
+interface AffiliateProductDocument {
+  id: string;
+  title: string;
+  price: number;
+  images: string[];
+  videos: string[];
+  used_media_by_platform?: {
+    facebook?: string[];
+    threads?: string[];
+  };
+  used_media_by_account?: {
+    [account_id: string]: string[];
+  };
+  lifecycle_status: 'NEW' | 'TESTING' | 'PROMISING' | 'PROVEN' | 'STOPPED';
+}
+```
+
+### 5. `threads_post_context`
 ```typescript
 interface ThreadsPostContext {
   id: string;                    // ctx_{thread_root_id}
