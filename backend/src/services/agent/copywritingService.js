@@ -67,10 +67,10 @@ function getConversationalPriceInfo(rawPrice, discount = null) {
 
   if (price < 10000) {
     return {
-      displayPhrase: 'cuma beberapa ribu perak',
+      displayPhrase: 'cuma recehan',
       shouldMentionPrice: true,
       priceCategory: 'Super Murah (<10rb)',
-      instruction: 'Sebut kisaran santai seperti "cuma beberapa ribu perak" atau "di bawah 10rb". DILARANG menulis angka rupiah presisi.'
+      instruction: 'Sebut kisaran santai seperti "cuma recehan", "harganya receh banget", "modal receh", atau "di bawah 10rb". DILARANG menulis angka rupiah presisi.'
     };
   }
 
