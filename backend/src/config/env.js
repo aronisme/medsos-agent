@@ -18,7 +18,7 @@ const env = {
   groqModelFast: process.env.GROQ_MODEL_FAST || 'openai/gpt-oss-20b',
   xkiroApiKey: process.env.XKIRO_API_KEY || '',
   xkiroBaseUrl: process.env.XKIRO_BASE_URL || 'https://api.xkiro.com/v1',
-  xkiroModel: process.env.XKIRO_MODEL || 'ox-alpha',
+  xkiroModel: process.env.XKIRO_MODEL || 'qwen/qwen3.8-max',
   fbAppId: process.env.FB_APP_ID || '',
   fbAppSecret: process.env.FB_APP_SECRET || '',
   baseUrl: (process.env.BASE_URL || process.env.PUBLIC_URL || 'https://shopee-link-aff.vercel.app').replace(/medsos-agent\.vercel\.app/g, 'shopee-link-aff.vercel.app'),

@@ -130,7 +130,7 @@ async function callGroqAPI({ systemPrompt, userPrompt, temperature = 0.7, maxTok
 }
 
 /**
- * Panggilan ke xKiro AI API (Ox Alpha) - Mendukung Text, Image/Vision & Multimodal Video
+ * Panggilan ke xKiro AI API (Qwen Flagship) - Mendukung Text, Image/Vision & Multimodal Video
  */
 async function callXKiroAPI({
   systemPrompt,
@@ -169,7 +169,7 @@ async function callXKiroAPI({
   }
 
   const payload = {
-    model: model || env.xkiroModel || 'ox-alpha',
+    model: model || env.xkiroModel || 'qwen/qwen3.8-max',
     messages,
     temperature,
     max_tokens: maxTokens,
@@ -200,7 +200,7 @@ async function callXKiroAPI({
 }
 
 /**
- * Fungsi Analisis Video Produk Shopee / Video Promosi menggunakan Ox Alpha
+ * Fungsi Analisis Video Produk Shopee / Video Promosi menggunakan Qwen AI
  * @param {Object} opts
  * @param {string} opts.videoUrl - URL publik video (Shopee Video, MP4, dsb)
  * @param {string} [opts.prompt] - Instruksi analisis video
@@ -216,7 +216,7 @@ async function analyzeVideoWithAI({ videoUrl, prompt, systemPrompt = '', maxToke
   const defaultPrompt = prompt || 'Analisis video produk ini: jelaskan fitur unggulan produk, apa yang sedang didemonstrasikan, dan buatkan ringkasan menarik untuk caption affiliate marketing.';
   
   return globalAIQueue.enqueue(async () => {
-    // 1. Coba menggunakan Ox Alpha (xKiro)
+    // 1. Coba menggunakan Qwen (xKiro)
     if (env.xkiroApiKey) {
       try {
         return await callXKiroAPI({
@@ -226,11 +226,11 @@ async function analyzeVideoWithAI({ videoUrl, prompt, systemPrompt = '', maxToke
           maxTokens
         });
       } catch (err) {
-        console.warn(`[analyzeVideoWithAI] Ox Alpha video processing error: ${err.message}`);
+        console.warn(`[analyzeVideoWithAI] Qwen video processing error: ${err.message}`);
       }
     }
 
-    throw new Error('Analisis video memerlukan XKIRO_API_KEY aktif dengan model Ox Alpha.');
+    throw new Error('Analisis video memerlukan XKIRO_API_KEY aktif dengan model Qwen.');
   });
 }
 
@@ -407,7 +407,7 @@ async function callCopywritingAI(options = {}) {
 }
 
 /**
- * Unified AI Caller untuk Profiling, Diagnosa, dan Metadata (Groq / Mistral / Ox Alpha)
+ * Unified AI Caller untuk Profiling, Diagnosa, dan Metadata (Groq / Mistral / Qwen Flagship)
  */
 async function callUnifiedAI(options = {}) {
   const {
@@ -420,13 +420,13 @@ async function callUnifiedAI(options = {}) {
   } = options;
 
   return globalAIQueue.enqueue(async () => {
-    // 1. Tier 1 (Utama): xKiro AI (Ox Alpha) jika API key dikonfigurasi
+    // 1. Tier 1 (Utama): xKiro AI (Qwen Flagship) jika API key dikonfigurasi
     if (env.xkiroApiKey) {
       try {
         const xkiroRes = await callXKiroAPI({ systemPrompt, userPrompt, temperature, maxTokens, jsonMode });
         return xkiroRes;
       } catch (xkiroErr) {
-        console.warn(`[callUnifiedAI] Tier 1 (xKiro Ox Alpha) gagal: ${xkiroErr.message}. Mengalihkan ke Tier 2 (Mistral)...`);
+        console.warn(`[callUnifiedAI] Tier 1 (xKiro Qwen) gagal: ${xkiroErr.message}. Mengalihkan ke Tier 2 (Mistral)...`);
       }
     }
 
