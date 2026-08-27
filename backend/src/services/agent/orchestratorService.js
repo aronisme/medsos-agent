@@ -2,7 +2,7 @@ const { db } = require('../../config/firebase');
 const { profileShopeeProduct } = require('./productIntelligenceService');
 const { curateProductMedia } = require('./mediaEvaluatorService');
 const { generatePostContent } = require('./copywritingService');
-const { checkContentSimilarity } = require('./contentFingerprint');
+const { checkContentSimilarity, validateCrossAccountContentDiversity } = require('./contentFingerprint');
 const { recordPostMemory, getRecentPlatformPosts, getCurrentQuarter } = require('./productPostMemoryService');
 const { diagnoseProductPerformance } = require('./diagnosticService');
 const { synthesizeKnowledge, getActiveKnowledgeInsights } = require('./knowledgeSynthesizer');
@@ -422,6 +422,8 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     });
 
     const inBatchScheduledKeys = new Set();
+    const inMemoryReservedMediaByProduct = {};
+    const currentBatchDrafts = [];
     
     // Bangun target slots dengan alokasi kepadatan jam emas hasil pembelajaran analitik
     const targetSlots = buildDynamicTimeSlots(activeInsights, config.default_time_slots || DEFAULT_CONFIG.default_time_slots);
@@ -443,6 +445,7 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     for (let accIdx = 0; accIdx < socialAccounts.length; accIdx++) {
       const targetAccount = socialAccounts[accIdx];
       const platform = targetAccount.platform || 'facebook';
+      const accountPersonaId = targetAccount.content_persona_id || 'ai_adaptive';
 
       // Ambil postingan yang sudah dijadwalkan khusus untuk akun ini
       const accountExistingPosts = existingPosts.filter(p => 
@@ -550,14 +553,17 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           attemptCount++;
           const candidate = candidateQueue.shift();
 
-          // Cek ketersediaan media segar khusus platform ini
+          // Cek ketersediaan media segar khusus platform & akun ini dengan in-memory reservation
+          const reservedUrls = inMemoryReservedMediaByProduct[candidate.id] || new Set();
           const mediaCuration = await curateProductMedia(candidate, 'auto', platform, userId, {
+            accountId: targetAccount.id,
+            inMemoryReservedUrls: reservedUrls,
             threadsMediaMode: accountThreadsMediaMode,
             allowFallbackNoMedia: true
           });
           
           if (mediaCuration.no_fresh_media || (!mediaCuration.selected_media && mediaCuration.media_type !== 'text')) {
-            logSteps.push(`[${platform.toUpperCase()}] Kandidat #${attemptCount} "${candidate.title.slice(0, 20)}..." dilewati: Media sudah terpakai di ${platform}.`);
+            logSteps.push(`[${platform.toUpperCase()}] Kandidat #${attemptCount} "${candidate.title.slice(0, 20)}..." dilewati: Media sudah terpakai di ${platform} atau di-reserve akun lain.`);
             continue;
           }
 
@@ -649,11 +655,12 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           }
         }
 
-        // 6.4. Generate Copywriting Segar Khusus Sesi
+        // 6.4. Generate Direct Copywriting Segar Khusus Akun Persona
         const postDraft = await generatePostContent({
           product: selectedProduct,
           profile,
           platform,
+          personaId: accountPersonaId,
           angle: customAngle,
           objective: 'clicks',
           shortlinkUrl,
@@ -665,16 +672,18 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           threadsMediaMode: isNoMediaMode ? 'no_media' : accountThreadsMediaMode
         });
 
-        // 6.5. Semantic Content Fingerprint Check
+        // 6.5. Validasi Diversitas Lintas 3 Ruang (Current Batch, Scheduled Posts, Recent Published)
         const recentPosts = await getRecentPlatformPosts(userId, platform, 7);
-        const similarityCheck = checkContentSimilarity(
-          { caption: postDraft.caption, hook_text: postDraft.raw_hook, product_id: selectedProduct.id },
-          recentPosts,
-          0.85
-        );
+        const diversityCheck = validateCrossAccountContentDiversity({
+          newDraft: postDraft,
+          currentBatchDrafts,
+          userScheduledPosts: existingPosts,
+          userRecentMemories: recentPosts,
+          threshold: 0.65
+        });
 
-        if (similarityCheck.is_duplicate) {
-          logSteps.push(`Draf untuk @${targetAccount.page_name} ditolak karena kemiripan semantik (${similarityCheck.highest_similarity}%).`);
+        if (!diversityCheck.passed) {
+          logSteps.push(`[Diversity Guard] Draf untuk @${targetAccount.page_name} ditolak karena kemiripan tinggi (${diversityCheck.highest_similarity}%) pada ruang ${diversityCheck.conflict_space}.`);
           continue;
         }
 
@@ -721,12 +730,25 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
 
         await postDocRef.set(newPost);
 
+        // Kunci media di memori batch siklus ini
+        if (!inMemoryReservedMediaByProduct[selectedProduct.id]) {
+          inMemoryReservedMediaByProduct[selectedProduct.id] = new Set();
+        }
+        formattedMedia.forEach(m => inMemoryReservedMediaByProduct[selectedProduct.id].add(m.media_url));
+
+        // Catat draf ini ke dalam currentBatchDrafts
+        currentBatchDrafts.push({
+          ...postDraft,
+          account_id: targetAccount.id,
+          product_id: selectedProduct.id
+        });
+
         // Jika terhubung eksperimen A/B, attach post ke varian
         if (linkedExperimentId) {
           await attachPostToExperiment(linkedExperimentId, variantId, postDocRef.id);
         }
 
-        // 6.7. Rekam ke Product Post Memory
+        // 6.7. Rekam ke Product Post Memory dengan Persona & Arketipe lengkap
         await recordPostMemory({
           product_id: selectedProduct.id,
           post_id: postDocRef.id,
@@ -739,6 +761,11 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
             platform,
             account_id: targetAccount.id,
             account_name: targetAccount.page_name,
+            persona_id: postDraft.persona_id || accountPersonaId,
+            persona_name: postDraft.persona_name || '',
+            archetype_id: postDraft.archetype_id || '',
+            archetype_name: postDraft.archetype_name || '',
+            natural_product_reference: postDraft.natural_product_reference || '',
             shortlink_code: shortlinkUrl.split('/s/')[1] || '',
             target_audience: profile.target_audience,
             price_at_post: selectedProduct.price,
@@ -752,7 +779,8 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
             template_name: postDraft.template_name,
             media_type: mediaCuration.media_type,
             media_urls: formattedMedia.map(m => m.media_url),
-            content_fingerprint: postDraft.content_fingerprint
+            content_fingerprint: postDraft.content_fingerprint,
+            caption_preview: postDraft.caption.slice(0, 150)
           },
           raw_metrics: { views: 0, likes: 0, comments: 0, shares: 0, affiliate_clicks: 0 },
           published_at: targetDate.toISOString()
@@ -764,12 +792,14 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
           productTitle: selectedProduct.title,
           scheduledAt: targetDate.toISOString(),
           platform,
+          personaName: postDraft.persona_name,
+          archetypeName: postDraft.archetype_name,
           session: slot.session || 'Sesi',
           isGoldenPeak: Boolean(slot.is_golden_peak)
         });
 
         const goldenTag = slot.is_golden_peak ? '🌟 [JAM EMAS]' : '';
-        logSteps.push(`✅ [${slot.session}] ${goldenTag} @${targetAccount.page_name} (${platform}) - "${selectedProduct.title.slice(0, 25)}..." pada ${targetDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`);
+        logSteps.push(`✅ [${slot.session}] ${goldenTag} @${targetAccount.page_name} [${postDraft.persona_name || accountPersonaId}] (${platform}) - "${selectedProduct.title.slice(0, 25)}..." pada ${targetDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`);
       }
     }
 

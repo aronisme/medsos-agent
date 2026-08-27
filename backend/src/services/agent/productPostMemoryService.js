@@ -40,6 +40,11 @@ async function recordPostMemory(memoryData) {
         platform: context_at_post.platform || 'facebook',
         account_id: context_at_post.account_id || '',
         account_name: context_at_post.account_name || '',
+        persona_id: context_at_post.persona_id || 'ai_adaptive',
+        persona_name: context_at_post.persona_name || '',
+        archetype_id: context_at_post.archetype_id || '',
+        archetype_name: context_at_post.archetype_name || '',
+        natural_product_reference: context_at_post.natural_product_reference || '',
         shortlink_code: context_at_post.shortlink_code || '',
         target_audience: context_at_post.target_audience || 'Umum',
         price_at_post: Number(context_at_post.price_at_post) || 0,
@@ -54,6 +59,7 @@ async function recordPostMemory(memoryData) {
         media_type: context_at_post.media_type || 'image',
         media_urls: Array.isArray(context_at_post.media_urls) ? context_at_post.media_urls : [],
         content_fingerprint: context_at_post.content_fingerprint || '',
+        caption_preview: context_at_post.caption_preview || '',
       },
       published_at: published_at,
       last_synced_at: new Date().toISOString(),
@@ -76,10 +82,16 @@ async function recordPostMemory(memoryData) {
     // Update Product's internal quick references in affiliate_products
     await updateProductQuarterlySnapshot(product_id, quarter, user_id);
 
-    // Tandai media yang telah digunakan pada platform ini
+    // Tandai media yang telah digunakan pada platform dan akun ini
     if (product_id && payload.context_at_post?.media_urls?.length > 0 && payload.context_at_post?.platform) {
       const { markMediaUsedOnPlatform } = require('./mediaEvaluatorService');
-      await markMediaUsedOnPlatform(product_id, payload.context_at_post.media_urls, payload.context_at_post.platform, user_id);
+      await markMediaUsedOnPlatform(
+        product_id,
+        payload.context_at_post.media_urls,
+        payload.context_at_post.platform,
+        user_id,
+        payload.context_at_post.account_id
+      );
     }
 
     return payload;

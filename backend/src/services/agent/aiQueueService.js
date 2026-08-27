@@ -83,7 +83,11 @@ async function callGroqAPI({ systemPrompt, userPrompt, temperature = 0.7, maxTok
       if (systemPrompt) {
         messages.push({ role: 'system', content: systemPrompt });
       }
-      messages.push({ role: 'user', content: userPrompt });
+      let finalUserPrompt = userPrompt;
+      if (jsonMode && !finalUserPrompt.toLowerCase().includes('json')) {
+        finalUserPrompt += '\n\nPlease return a valid JSON object.';
+      }
+      messages.push({ role: 'user', content: finalUserPrompt });
 
       const payload = {
         model,

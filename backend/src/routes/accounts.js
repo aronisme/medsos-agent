@@ -15,6 +15,24 @@ function canonicalizeNiches(niches) {
   return clean.length > 0 ? clean : ['UNIVERSAL'];
 }
 
+const CANONICAL_PERSONAS = [
+  'bestie_hype',
+  'aesthetic_minimalist',
+  'witty_curhat',
+  'bargain_hunter',
+  'pov_reviewer',
+  'soft_lifestyle',
+  'relatable_everyday',
+  'practical_expert',
+  'ai_adaptive'
+];
+
+function canonicalizePersona(personaId) {
+  if (!personaId) return 'ai_adaptive';
+  const clean = String(personaId).trim().toLowerCase();
+  return CANONICAL_PERSONAS.includes(clean) ? clean : 'ai_adaptive';
+}
+
 // GET /api/accounts
 router.get('/', async (req, res) => {
   try {
@@ -29,6 +47,8 @@ router.get('/', async (req, res) => {
         id: doc.id,
         ...rest,
         allowed_niches: canonicalizeNiches(data.allowed_niches),
+        threads_media_mode: data.threads_media_mode || 'auto',
+        content_persona_id: canonicalizePersona(data.content_persona_id),
         has_token: Boolean(access_token)
       };
     });
@@ -44,7 +64,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/accounts – manual add (upsert)
 router.post('/', async (req, res) => {
-  const { platform, page_id, page_name, access_token, allowed_niches, threads_media_mode } = req.body || {};
+  const { platform, page_id, page_name, access_token, allowed_niches, threads_media_mode, content_persona_id } = req.body || {};
   if (!['facebook', 'instagram', 'threads', 'telegram'].includes(platform)) {
     return res.status(400).json({ error: 'platform harus facebook, instagram, threads, atau telegram.' });
   }
@@ -53,6 +73,7 @@ router.post('/', async (req, res) => {
   const cleanPageId = String(page_id).trim();
   const canonicalNiches = canonicalizeNiches(allowed_niches);
   const cleanThreadsMode = ['auto', 'no_media', 'with_media'].includes(threads_media_mode) ? threads_media_mode : 'auto';
+  const canonicalPersona = canonicalizePersona(content_persona_id);
 
   try {
     const existingSnap = await db.collection('social_accounts')
@@ -68,6 +89,7 @@ router.post('/', async (req, res) => {
         page_name: page_name ? String(page_name).trim() : (existingDoc.data().page_name || null),
         allowed_niches: canonicalNiches,
         threads_media_mode: platform === 'threads' ? cleanThreadsMode : (existingDoc.data().threads_media_mode || 'auto'),
+        content_persona_id: content_persona_id !== undefined ? canonicalPersona : (existingDoc.data().content_persona_id || 'ai_adaptive'),
         is_active: 1,
         updated_at: new Date().toISOString()
       };
@@ -92,7 +114,7 @@ router.post('/', async (req, res) => {
 
       const data = { ...existingDoc.data(), ...updateData };
       const { access_token: _at, ...rest } = data;
-      return res.json({ account: { id: existingDoc.id, ...rest, allowed_niches: canonicalNiches, threads_media_mode: updateData.threads_media_mode, has_token: Boolean(data.access_token) } });
+      return res.json({ account: { id: existingDoc.id, ...rest, allowed_niches: canonicalNiches, threads_media_mode: updateData.threads_media_mode, content_persona_id: updateData.content_persona_id, has_token: Boolean(data.access_token) } });
     }
 
     const newAccount = {
@@ -103,6 +125,7 @@ router.post('/', async (req, res) => {
       page_name: page_name ? String(page_name).trim() : null,
       allowed_niches: canonicalNiches,
       threads_media_mode: platform === 'threads' ? cleanThreadsMode : 'auto',
+      content_persona_id: canonicalPersona,
       is_active: 1,
       created_at: new Date().toISOString()
     };
@@ -123,13 +146,13 @@ router.post('/', async (req, res) => {
     }
 
     const { access_token: _at, ...rest } = newAccount;
-    res.status(201).json({ account: { id: docRef.id, ...rest, allowed_niches: canonicalNiches, threads_media_mode: newAccount.threads_media_mode, has_token: Boolean(access_token) } });
+    res.status(201).json({ account: { id: docRef.id, ...rest, allowed_niches: canonicalNiches, threads_media_mode: newAccount.threads_media_mode, content_persona_id: newAccount.content_persona_id, has_token: Boolean(access_token) } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT /api/accounts/:id – update token/aktif/niches/threads_media_mode
+// PUT /api/accounts/:id – update token/aktif/niches/threads_media_mode/content_persona_id
 router.put('/:id', async (req, res) => {
   try {
     const docRef = db.collection('social_accounts').doc(req.params.id);
@@ -140,7 +163,7 @@ router.put('/:id', async (req, res) => {
     }
     
     const account = doc.data();
-    const { access_token, page_name, is_active, allowed_niches, threads_media_mode } = req.body || {};
+    const { access_token, page_name, is_active, allowed_niches, threads_media_mode, content_persona_id } = req.body || {};
     
     const updateData = {
       access_token: access_token !== undefined ? access_token : account.access_token,
@@ -154,6 +177,10 @@ router.put('/:id', async (req, res) => {
 
     if (threads_media_mode !== undefined && ['auto', 'no_media', 'with_media'].includes(threads_media_mode)) {
       updateData.threads_media_mode = threads_media_mode;
+    }
+
+    if (content_persona_id !== undefined) {
+      updateData.content_persona_id = canonicalizePersona(content_persona_id);
     }
     
     await docRef.update(updateData);
@@ -173,7 +200,7 @@ router.put('/:id', async (req, res) => {
     }
     
     const { access_token: _at, ...rest } = { ...account, ...updateData };
-    res.json({ account: { id: doc.id, ...rest, allowed_niches: canonicalizeNiches(updateData.allowed_niches || account.allowed_niches), threads_media_mode: updateData.threads_media_mode || account.threads_media_mode || 'auto', has_token: Boolean(updateData.access_token) } });
+    res.json({ account: { id: doc.id, ...rest, allowed_niches: canonicalizeNiches(updateData.allowed_niches || account.allowed_niches), threads_media_mode: updateData.threads_media_mode || account.threads_media_mode || 'auto', content_persona_id: updateData.content_persona_id || account.content_persona_id || 'ai_adaptive', has_token: Boolean(updateData.access_token) } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -207,4 +234,9 @@ router.post('/refresh-tokens', async (req, res) => {
   }
 });
 
+router.canonicalizePersona = canonicalizePersona;
+router.CANONICAL_PERSONAS = CANONICAL_PERSONAS;
+
 module.exports = router;
+module.exports.canonicalizePersona = canonicalizePersona;
+module.exports.CANONICAL_PERSONAS = CANONICAL_PERSONAS;

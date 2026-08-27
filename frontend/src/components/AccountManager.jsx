@@ -29,6 +29,18 @@ const CANONICAL_NICHES = [
   { id: 'AUTOMOTIVE', label: 'Otomotif & Aksesoris' }
 ];
 
+export const CANONICAL_PERSONAS = [
+  { id: 'bestie_hype', label: '💕 Bestie Hype', desc: 'Casual, Playful, Gen Z slang & ekspresif' },
+  { id: 'aesthetic_minimalist', label: '🌿 Aesthetic Minimalist', desc: 'Kalem, elegan, fokus visual & rapi' },
+  { id: 'witty_curhat', label: '😂 Witty Curhat', desc: 'Humor relatable, cerita santai sehari-hari' },
+  { id: 'bargain_hunter', label: '🛍️ Smart Bargain Hunter', desc: 'In This Economy, cari promo & value shock' },
+  { id: 'pov_reviewer', label: '🔍 POV Reviewer', desc: 'Format POV jujur, demonstrasi praktis' },
+  { id: 'soft_lifestyle', label: '✨ Soft Lifestyle', desc: 'Rekomendasi wishlist, outfit & dekor manis' },
+  { id: 'relatable_everyday', label: '🤏 Relatable Everyday', desc: 'Sederhana, membumi, obrolan akrab' },
+  { id: 'practical_expert', label: '🧠 Practical Life-Hack', desc: 'Solusi cerdas, tips bermanfaat & efisien' },
+  { id: 'ai_adaptive', label: '🤖 AI Adaptive', desc: 'Kombinasi cerdas dinamis yang dipelajari AI' },
+];
+
 export default function AccountManager() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,11 +52,13 @@ export default function AccountManager() {
   const [igAccountId, setIgAccountId] = useState('');
   const [allowedNiches, setAllowedNiches] = useState(['UNIVERSAL']);
   const [threadsMediaMode, setThreadsMediaMode] = useState('auto');
+  const [contentPersonaId, setContentPersonaId] = useState('ai_adaptive');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [editingNichesId, setEditingNichesId] = useState(null);
   const [editingThreadsModeId, setEditingThreadsModeId] = useState(null);
+  const [editingPersonaId, setEditingPersonaId] = useState(null);
 
   const [refreshingTokens, setRefreshingTokens] = useState(false);
 
@@ -104,6 +118,7 @@ export default function AccountManager() {
         ig_account_id: platform === 'instagram' ? igAccountId : null,
         allowed_niches: allowedNiches.length > 0 ? allowedNiches : ['UNIVERSAL'],
         threads_media_mode: platform === 'threads' ? threadsMediaMode : 'auto',
+        content_persona_id: contentPersonaId || 'ai_adaptive',
       });
 
       setMessage({ type: 'success', text: 'Akun berhasil ditambahkan!' });
@@ -114,11 +129,22 @@ export default function AccountManager() {
       setIgAccountId('');
       setAllowedNiches(['UNIVERSAL']);
       setThreadsMediaMode('auto');
+      setContentPersonaId('ai_adaptive');
       fetchAccounts();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Gagal menambahkan akun.' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdatePersona = async (id, newPersona) => {
+    try {
+      await api.put(`/accounts/${id}`, { content_persona_id: newPersona });
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, content_persona_id: newPersona } : a));
+      setEditingPersonaId(null);
+    } catch (err) {
+      alert('Gagal memperbarui persona akun: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -354,6 +380,62 @@ export default function AccountManager() {
                       IG Business ID: {acc.ig_account_id}
                     </p>
                   )}
+
+                  {/* Persona Identity Badges & Quick Selector */}
+                  <div className="mt-3 pt-3 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                        <Bot className="w-3 h-3 text-pink-400" /> Persona Identitas:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingPersonaId(editingPersonaId === acc.id ? null : acc.id)}
+                        className="text-[10px] text-pink-400 hover:text-pink-300 font-bold transition-colors"
+                      >
+                        {editingPersonaId === acc.id ? 'Tutup' : 'Ubah Persona'}
+                      </button>
+                    </div>
+
+                    {editingPersonaId === acc.id ? (
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 animate-in fade-in">
+                        <div className="text-[10px] text-slate-400">Pilih karakter persona editorial untuk akun ini:</div>
+                        <div className="grid grid-cols-1 gap-1">
+                          {CANONICAL_PERSONAS.map(p => {
+                            const isSelected = (acc.content_persona_id || 'ai_adaptive') === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => handleUpdatePersona(acc.id, p.id)}
+                                className={`p-1.5 rounded-lg text-left border transition-all ${
+                                  isSelected
+                                    ? 'bg-pink-500/20 text-white border-pink-500/50 shadow-sm'
+                                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                                }`}
+                              >
+                                <div className="text-[11px] font-bold text-slate-200">{p.label}</div>
+                                <div className="text-[9px] text-slate-400">{p.desc}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        {(() => {
+                          const pObj = CANONICAL_PERSONAS.find(x => x.id === (acc.content_persona_id || 'ai_adaptive')) || CANONICAL_PERSONAS[CANONICAL_PERSONAS.length - 1];
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-pink-500/10 text-pink-300 border border-pink-500/30 self-start">
+                                {pObj.label}
+                              </span>
+                              <span className="text-[9px] text-slate-400">{pObj.desc}</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Niche Alignment Badges & Quick Selector */}
                   <div className="mt-3 pt-3 border-t border-slate-800/80">
@@ -680,6 +762,33 @@ export default function AccountManager() {
                   </div>
                 </div>
               )}
+
+              {/* Persona Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Persona Identitas Akun (Karakter Tulisan AI)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-3 bg-slate-950 border border-slate-800 rounded-xl max-h-48 overflow-y-auto">
+                  {CANONICAL_PERSONAS.map(p => {
+                    const isSel = contentPersonaId === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setContentPersonaId(p.id)}
+                        className={`p-2 rounded-xl text-left border transition-all ${
+                          isSel
+                            ? 'bg-pink-500/20 text-white border-pink-500/60 shadow-sm'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="text-[11px] font-bold text-slate-200">{p.label}</div>
+                        <div className="text-[9px] text-slate-400">{p.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Niche Selection */}
               <div>

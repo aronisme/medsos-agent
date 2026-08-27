@@ -2,33 +2,55 @@ const { db } = require('../../config/firebase');
 const { logAgentDecision } = require('./decisionLogger');
 
 /**
- * Mengambil daftar URL media yang sudah pernah digunakan pada platform tertentu untuk produk ini.
- * @param {string} productId
- * @param {string} platform ('facebook' | 'threads' | 'instagram' | 'all')
- * @param {Object} [productObj]
- * @param {string} [userId]
+ * Mengambil daftar URL media yang sudah pernah digunakan pada platform atau akun tertentu untuk produk ini.
+ * @param {Object} params
+ * @param {string} params.productId
+ * @param {string} [params.platform='all']
+ * @param {string} [params.accountId]
+ * @param {Object} [params.productObj]
+ * @param {Set<string>|Array<string>} [params.inMemoryReservedUrls]
+ * @param {string} [params.userId='system']
  * @returns {Promise<Set<string>>}
  */
-async function getUsedMediaForPlatform(productId, platform = 'all', productObj = null, userId = 'system') {
+async function getUsedMediaForPlatform(productId, platform = 'all', productObj = null, userId = 'system', accountId = null, inMemoryReservedUrls = null) {
   const usedUrls = new Set();
   if (!productId) return usedUrls;
 
   const cleanPlatform = String(platform || 'all').toLowerCase();
+  const cleanAccountId = accountId ? String(accountId).trim() : null;
 
-  // 1. Cek dari field cached di productObj jika ada
-  if (productObj?.used_media_by_platform) {
-    if (cleanPlatform === 'all') {
-      Object.values(productObj.used_media_by_platform).forEach(list => {
-        if (Array.isArray(list)) list.forEach(url => usedUrls.add(String(url).trim()));
+  // 0. Masukkan media yang sedang di-reserve secara real-time dalam siklus batch ini
+  if (inMemoryReservedUrls) {
+    const list = inMemoryReservedUrls instanceof Set ? Array.from(inMemoryReservedUrls) : inMemoryReservedUrls;
+    if (Array.isArray(list)) {
+      list.forEach(url => {
+        if (url) usedUrls.add(String(url).trim());
       });
-    } else {
-      const platList = productObj.used_media_by_platform[cleanPlatform] || [];
-      platList.forEach(url => usedUrls.add(String(url).trim()));
     }
+  }
+
+  // 1. Cek dari field cached di productObj jika ada (used_media_by_platform & used_media_by_account)
+  if (productObj) {
+    if (productObj.used_media_by_platform) {
+      if (cleanPlatform === 'all') {
+        Object.values(productObj.used_media_by_platform).forEach(list => {
+          if (Array.isArray(list)) list.forEach(url => usedUrls.add(String(url).trim()));
+        });
+      } else {
+        const platList = productObj.used_media_by_platform[cleanPlatform] || [];
+        platList.forEach(url => usedUrls.add(String(url).trim()));
+      }
+    }
+
+    if (cleanAccountId && productObj.used_media_by_account?.[cleanAccountId]) {
+      const accList = productObj.used_media_by_account[cleanAccountId] || [];
+      accList.forEach(url => usedUrls.add(String(url).trim()));
+    }
+
     return usedUrls;
   }
 
-  // 2. Query dari product_post_memory untuk platform ini
+  // 2. Query dari product_post_memory untuk platform / akun ini
   try {
     let query = db.collection('product_post_memory')
       .where('product_id', '==', String(productId));
@@ -53,15 +75,17 @@ async function getUsedMediaForPlatform(productId, platform = 'all', productObj =
 }
 
 /**
- * Menandai media yang telah digunakan pada platform tertentu
+ * Menandai media yang telah digunakan pada platform dan akun tertentu
  * @param {string} productId
  * @param {Array<string>} mediaUrls
  * @param {string} platform
  * @param {string} userId
+ * @param {string} [accountId]
  */
-async function markMediaUsedOnPlatform(productId, mediaUrls = [], platform = 'facebook', userId = 'system') {
+async function markMediaUsedOnPlatform(productId, mediaUrls = [], platform = 'facebook', userId = 'system', accountId = null) {
   if (!productId || !Array.isArray(mediaUrls) || mediaUrls.length === 0) return;
   const cleanPlatform = String(platform || 'facebook').toLowerCase();
+  const cleanAccountId = accountId ? String(accountId).trim() : null;
 
   try {
     const prodRef = db.collection('affiliate_products').doc(String(productId));
@@ -69,14 +93,24 @@ async function markMediaUsedOnPlatform(productId, mediaUrls = [], platform = 'fa
     if (!prodDoc.exists) return;
 
     const prodData = prodDoc.data();
-    const existingUsage = prodData.used_media_by_platform || {};
-    const platformList = existingUsage[cleanPlatform] || [];
+    
+    // Platform-level usage
+    const existingPlatformUsage = prodData.used_media_by_platform || {};
+    const platformList = existingPlatformUsage[cleanPlatform] || [];
+    const updatedPlatformList = Array.from(new Set([...platformList, ...mediaUrls.map(u => String(u).trim())]));
+    existingPlatformUsage[cleanPlatform] = updatedPlatformList;
 
-    const updatedList = Array.from(new Set([...platformList, ...mediaUrls.map(u => String(u).trim())]));
-    existingUsage[cleanPlatform] = updatedList;
+    // Account-level usage
+    const existingAccountUsage = prodData.used_media_by_account || {};
+    if (cleanAccountId) {
+      const accountList = existingAccountUsage[cleanAccountId] || [];
+      const updatedAccountList = Array.from(new Set([...accountList, ...mediaUrls.map(u => String(u).trim())]));
+      existingAccountUsage[cleanAccountId] = updatedAccountList;
+    }
 
     await prodRef.update({
-      used_media_by_platform: existingUsage,
+      used_media_by_platform: existingPlatformUsage,
+      used_media_by_account: existingAccountUsage,
       updated_at: new Date().toISOString()
     });
   } catch (err) {
@@ -85,22 +119,21 @@ async function markMediaUsedOnPlatform(productId, mediaUrls = [], platform = 'fa
 }
 
 /**
- * Kurasi media produk Shopee dengan aturan ketat:
- * 1. Media yang SUDAH PERNAH digunakan pada platform target (misal FB) TIDAK BOLEH digunakan lagi pada platform tersebut (walau beda akun).
- * 2. Media tersebut TETAP BOLEH digunakan pada platform lain (misal Threads/IG) jika belum pernah dipakai di sana.
- * 3. Maksimal 2 Gambar Terbaik per post (clean, estetik).
- * 4. ATAU Maksimal 1 Video Terbaik per post (demo/review/unboxing).
+ * Kurasi media produk Shopee dengan isolasi akun & platform + real-time reservation:
+ * 1. Media yang SUDAH PERNAH digunakan pada platform target (misal FB) TIDAK BOLEH digunakan lagi pada platform tersebut.
+ * 2. Media yang sudah di-reserve oleh akun lain pada siklus yang sama DIISOLASI secara real-time.
+ * 3. Maksimal 2 Gambar Terbaik per post (clean, estetik) ATAU Maksimal 1 Video Terbaik per post.
  * 
  * @param {Object} product - Objek produk
  * @param {string} [preferredType] - 'image' | 'video' | 'auto' | 'none'
  * @param {string} [platform] - 'facebook' | 'threads' | 'instagram' | 'all'
  * @param {string} [userId]
- * @param {Object} [options] - { threadsMediaMode: 'auto'|'no_media'|'with_media', allowFallbackNoMedia: boolean }
+ * @param {Object} [options] - { accountId, inMemoryReservedUrls, threadsMediaMode: 'auto'|'no_media'|'with_media', allowFallbackNoMedia: boolean }
  * @returns {Promise<Object>} { media_type: 'image'|'video'|'text'|null, selected_media: Array, no_fresh_media: boolean, reasoning: string }
  */
 async function curateProductMedia(product, preferredType = 'auto', platform = 'all', userId = 'system', options = {}) {
   try {
-    const { threadsMediaMode = 'auto', allowFallbackNoMedia = true } = options;
+    const { threadsMediaMode = 'auto', allowFallbackNoMedia = true, accountId = null, inMemoryReservedUrls = null } = options;
     const isThreads = platform === 'threads';
 
     // 0. Jika platform Threads secara eksplisit memilih mode no_media / preferredType = 'none'
@@ -151,8 +184,8 @@ async function curateProductMedia(product, preferredType = 'auto', platform = 'a
       if (url && !allImageList.includes(url)) allImageList.push(url);
     });
 
-    // Ambil media yang sudah pernah digunakan khusus pada PLATFORM ini
-    const usedMediaSet = await getUsedMediaForPlatform(product.id, platform, product, userId);
+    // Ambil media yang sudah pernah digunakan khusus pada PLATFORM dan AKUN ini (termasuk in-memory reservation)
+    const usedMediaSet = await getUsedMediaForPlatform(product.id, platform, product, userId, accountId, inMemoryReservedUrls);
 
     // Filter HANYA media yang BELUM pernah dipakai di platform ini (Fresh Media)
     const freshVideoList = allVideoList.filter(url => !usedMediaSet.has(String(url).trim()));

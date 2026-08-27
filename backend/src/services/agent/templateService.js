@@ -1,7 +1,238 @@
 const { db } = require('../../config/firebase');
 
 /**
- * Seed Template Pustaka Dasar (15 Template Konversi Terbukti)
+ * 9 Canonical Personas (Identitas Akun yang Dipilih User)
+ */
+const PERSONA_DEFINITIONS = {
+  bestie_hype: {
+    id: 'bestie_hype',
+    name: '💕 Bestie Hype',
+    description: 'Casual, Playful, Gen Z slang & ekspresif',
+    tone_rules: [
+      'Gunakan gaya bicara akrab layaknya sahabat dekat / bestie tongkrongan.',
+      'Sering gunakan ekspresi emosional: "MAAF TERIAK 😭", "KAAAK TOLONG GAMAU TAU SENDIRIAN 😭🤌", "cakep parah", "auto kalap".',
+      'Hindari bahasa formal atau kaku sama sekali.',
+      'Sajikan review spontan dan antusias.'
+    ],
+    preferred_archetypes: ['emotional_reaction', 'value_shock', 'witty_question', 'honest_spill']
+  },
+  aesthetic_minimalist: {
+    id: 'aesthetic_minimalist',
+    name: '🌿 Aesthetic Minimalist',
+    description: 'Kalem, elegan, fokus visual & rapi',
+    tone_rules: [
+      'Gunakan gaya penulisan tenang, bersih, rapi, dan berkelas.',
+      'Gunakan kata-kata: "effortless", "look-nya manis", "timeless", "aesthetic", "clean look", "flowy".',
+      'Hindari caps lock berlebihan atau slang kasar.',
+      'Fokus pada detail bahan, warna kalem, dan perpaduan outfit/dekorasi.'
+    ],
+    preferred_archetypes: ['aesthetic_wishlist', 'honest_spill', 'pov_lifehack']
+  },
+  witty_curhat: {
+    id: 'witty_curhat',
+    name: '😂 Witty Curhat',
+    description: 'Humor relatable, cerita santai sehari-hari',
+    tone_rules: [
+      'Awali dengan uneg-uneg / curhat lucu situasi sehari-hari yang sangat relatable.',
+      'Gunakan humor santai, pertanyaan usil, atau self-deprecating yang memancing senyum audiens.',
+      'Teks ringkas 1-3 kalimat yang mengalir lancar tanpa terasa seperti iklan.'
+    ],
+    preferred_archetypes: ['witty_question', 'emotional_reaction', 'honest_spill']
+  },
+  bargain_hunter: {
+    id: 'bargain_hunter',
+    name: '🛍️ Smart Bargain Hunter',
+    description: 'In This Economy, cari promo & value shock',
+    tone_rules: [
+      'Fokus pada kontras harga murah vs kualitas mewah / mall ori.',
+      'Gunakan ungkapan: "IN THIS ECONOMY ‼️", "HARGA segini dapet kualitas begini", "amanin dompet", "vibesnya mahal".',
+      'Tekankan penghematan belanja tanpa mengorbankan gengsi/kualitas.'
+    ],
+    preferred_archetypes: ['value_shock', 'witty_question', 'honest_spill']
+  },
+  pov_reviewer: {
+    id: 'pov_reviewer',
+    name: '🔍 POV Reviewer',
+    description: 'Format POV jujur, demonstrasi praktis',
+    tone_rules: [
+      'Gunakan sudut pandang POV (Point of View) praktis saat menggunakan produk.',
+      'Jelaskan solusi nyata: "POV: pas lagi...", "Definisi satisfying pas dipakai", "praktis pol tanpa drama".',
+      'Fokus pada fungsi nyata dan kenyamanan saat dipakai/digunakan.'
+    ],
+    preferred_archetypes: ['pov_lifehack', 'honest_spill', 'witty_question']
+  },
+  soft_lifestyle: {
+    id: 'soft_lifestyle',
+    name: '✨ Soft Lifestyle',
+    description: 'Rekomendasi wishlist, outfit & dekor manis',
+    tone_rules: [
+      'Gunakan gaya lembut, hangat, manis, dan menyemangati.',
+      'Sertakan emoji manis secukupnya (🌸, 🎀, ✨, 🤍, 🌷).',
+      'Cocok untuk outfit kondangan, baju ngantor, kuliah, atau dekorasi kamar.'
+    ],
+    preferred_archetypes: ['aesthetic_wishlist', 'emotional_reaction', 'honest_spill']
+  },
+  relatable_everyday: {
+    id: 'relatable_everyday',
+    name: '🤏 Relatable Everyday',
+    description: 'Sederhana, membumi, obrolan akrab',
+    tone_rules: [
+      'Gunakan bahasa percakapan sehari-hari yang sangat membumi.',
+      'Sapa audiens secara santai: "Kalian ngerasa ga sih...", "Siapa yang lemarinya...", "Nemu ini pas lagi...".',
+      'Hindari kata-kata muluk atau hiperbola marketing.'
+    ],
+    preferred_archetypes: ['witty_question', 'honest_spill', 'pov_lifehack']
+  },
+  practical_expert: {
+    id: 'practical_expert',
+    name: '🧠 Practical Life-Hack',
+    description: 'Solusi cerdas, tips bermanfaat & efisien',
+    tone_rules: [
+      'Fokus pada life-hack efisiensi waktu, kerapihan rumah, atau solusi hemat.',
+      'Gunakan frasa: "Ini kenapa gak viral dari dulu sih", "Ternyata segampang ini", "Wajib save buat yang sering...".',
+      'Berikan insight fungsional yang langsung bisa dipraktikkan.'
+    ],
+    preferred_archetypes: ['pov_lifehack', 'honest_spill', 'value_shock']
+  },
+  ai_adaptive: {
+    id: 'ai_adaptive',
+    name: '🤖 AI Adaptive',
+    description: 'Kombinasi cerdas dinamis yang dipelajari AI',
+    tone_rules: [
+      'Seimbangkan antara ekspresi emosional yang hangat, humor relatable, dan rekomendasi fungsional.',
+      'Pilih gaya yang paling cocok dengan jenis produk dan waktu tayang.'
+    ],
+    preferred_archetypes: ['emotional_reaction', 'witty_question', 'pov_lifehack', 'value_shock', 'aesthetic_wishlist', 'honest_spill']
+  }
+};
+
+/**
+ * 6 Human Creator Archetypes (Bagaimana AI Bercerita di Postingan Ini)
+ */
+const ARCHETYPE_DEFINITIONS = {
+  witty_question: {
+    id: 'witty_question',
+    name: 'Witty Curhat & Casual Question',
+    objective_fit: ['engagement', 'clicks'],
+    rules: 'Tulis 1-2 kalimat santai yang memantik opini/pertanyaan audiens. Contoh: "Korang rasa handbag macam ni harga bawah RM30 berbaloi tak?" atau "Spill baju kondangan butter yellow yang ga bikin kamu keliatan kayak tumpeng 🫣". JANGAN buat bullet points!',
+    default_cta: 'conversation_cta'
+  },
+  emotional_reaction: {
+    id: 'emotional_reaction',
+    name: 'Emotional Reaction & Bestie Hype',
+    objective_fit: ['clicks', 'engagement'],
+    rules: 'Ungkapan syok/kegembiraan spontan menemukan barang bagus. Contoh: "DEFINISI OUTFIT HEMAT 🤌 Modal satu cardigan bisa mix and match banyak gaya loh. Tapi kalau cardigannya secakep ini, mana cukup beli satu. Auto borong gak si 😭".',
+    default_cta: 'soft_cta'
+  },
+  pov_lifehack: {
+    id: 'pov_lifehack',
+    name: 'POV Life-Hack & Satisfying Solution',
+    objective_fit: ['clicks', 'engagement'],
+    rules: 'Format POV atau tips menyelesaikan masalah sehari-hari secara satisfying. Contoh: "POV: Pemandangan pas lagi refill sabun tanpa ada drama tumpah-tumpah berantakan. Wadah pump yang satu ini juara banget, tinggal cemplungin pouch isi ulang langsung dari kemasannya. Praktis pol! 🧴✨".',
+    default_cta: 'direct_link_cta'
+  },
+  value_shock: {
+    id: 'value_shock',
+    name: 'Value Shock & In This Economy',
+    objective_fit: ['clicks'],
+    rules: 'Soroti kejutan harga murah di tengah kondisi inflasi/serba mahal. Contoh: "HEH MAAF NORAK ‼️ 😭 IN THIS ECONOMY akhirnya nemu toko yang jual FLATSHOES yang udah MALL ORI vibesnya kelihatan mahal, tapi gak ekspek harganya MURAH KEBANGETAN NIH 🙈🫶".',
+    default_cta: 'soft_cta'
+  },
+  aesthetic_wishlist: {
+    id: 'aesthetic_wishlist',
+    name: 'Aesthetic Wishlist & Mix and Match',
+    objective_fit: ['clicks'],
+    rules: 'Rekomendasi busana / barang estetik yang rapi dan elegan. Contoh: "Kalau kamu suka outfit yang feminin, elegan, tapi tetap terlihat effortless... ini wajib banget masuk wishlist! 🤍 Satu set blouse lengan balon manis dipaduin rok floral flowy.".',
+    default_cta: 'soft_cta'
+  },
+  honest_spill: {
+    id: 'honest_spill',
+    name: 'Spontaneous Honest Spill',
+    objective_fit: ['clicks'],
+    rules: 'Rekomendasi jujur saat menemukan barang lucu/unik tanpa terkesan jualan. Contoh: "GAMAU GEMES SENDIRIAN SAMA DOMPET SENDIRI. 🤗🎀 Beberapa dompet pink yang aku punya, modelnya lucu banget, ga pasaran dan banyak slot penyimpanannya ya. Wajib punya sihh. 👇💖".',
+    default_cta: 'soft_cta'
+  }
+};
+
+/**
+ * Memilih strategi copywriting (Persona -> Archetype -> Angle -> CTA) via Contextual Multi-Armed Bandit
+ * @param {Object} opts
+ * @param {string} opts.platform - 'facebook' | 'threads' | 'instagram'
+ * @param {string} [opts.personaId='ai_adaptive'] - ID Persona Akun
+ * @param {string} [opts.niche='Universal']
+ * @param {string} [opts.objective='clicks']
+ * @param {Array} [opts.excludedArchetypeIds=[]]
+ * @returns {Object} Strategy payload { persona, archetype, angle, ctaClass }
+ */
+async function selectContentStrategyByBandit({
+  platform = 'threads',
+  personaId = 'ai_adaptive',
+  niche = 'Universal',
+  objective = 'clicks',
+  excludedArchetypeIds = []
+}) {
+  const persona = PERSONA_DEFINITIONS[personaId] || PERSONA_DEFINITIONS.ai_adaptive;
+  const availableArchetypes = Object.keys(ARCHETYPE_DEFINITIONS);
+
+  // Ambil arketipe yang sesuai dengan preferensi persona
+  let candidateArchetypeKeys = persona.preferred_archetypes.filter(k => ARCHETYPE_DEFINITIONS[k]);
+  if (candidateArchetypeKeys.length === 0) {
+    candidateArchetypeKeys = availableArchetypes;
+  }
+
+  // Filter arketipe yang baru dipakai (anti-duplikasi) jika masih ada alternatif
+  const nonExcluded = candidateArchetypeKeys.filter(k => !excludedArchetypeIds.includes(k));
+  if (nonExcluded.length > 0) {
+    candidateArchetypeKeys = nonExcluded;
+  }
+
+  // Multi-Armed Bandit Scoring untuk Arketipe
+  let strategyRecords = {};
+  try {
+    const snap = await db.collection('agent_strategy_bandit').where('persona_id', '==', persona.id).get();
+    snap.docs.forEach(d => {
+      strategyRecords[d.data().archetype_id] = d.data();
+    });
+  } catch (err) {
+    // fallback gracefully
+  }
+
+  const scoredArchetypes = candidateArchetypeKeys.map(k => {
+    const rec = strategyRecords[k] || {};
+    const avgCtr = rec.avg_ctr || 0.02;
+    const sampleSize = rec.sample_size || 0;
+    const ucbBonus = sampleSize < 3 ? 0.02 : Math.sqrt((2 * Math.log(Math.max(2, candidateArchetypeKeys.length))) / (sampleSize + 1)) * 0.01;
+    const jitter = Math.random() * 0.01;
+    return {
+      archetypeKey: k,
+      score: avgCtr + ucbBonus + jitter
+    };
+  });
+
+  scoredArchetypes.sort((a, b) => b.score - a.score);
+
+  // 80% Exploit / 20% Explore
+  const isExplore = Math.random() < 0.2 && scoredArchetypes.length > 1;
+  const selectedKey = isExplore 
+    ? scoredArchetypes[Math.floor(Math.random() * scoredArchetypes.length)].archetypeKey
+    : scoredArchetypes[0].archetypeKey;
+
+  const chosenArchetype = ARCHETYPE_DEFINITIONS[selectedKey] || ARCHETYPE_DEFINITIONS.emotional_reaction;
+
+  // Tentukan sudut pandang (Angle)
+  const candidateAngles = ['Problem-Agitate-Solution', 'Honest Review', 'Flash Promo FOMO', 'Aesthetic Showcase', 'Storytelling', 'Practical Life-Hack'];
+  const chosenAngle = candidateAngles[Math.floor(Math.random() * candidateAngles.length)];
+
+  return {
+    persona,
+    archetype: chosenArchetype,
+    angle: chosenAngle,
+    ctaClass: chosenArchetype.default_cta || 'soft_cta'
+  };
+}
+
+/**
+ * Legacy Seed Template Pustaka Dasar (untuk backward-compatibility)
  */
 const SEED_TEMPLATES = [
   // 1. PAS (Problem - Agitate - Solution)
@@ -323,7 +554,44 @@ async function recordTemplatePerformance(templateId, platform = 'facebook', obje
   }
 }
 
+/**
+ * Memperbarui performa strategi (Persona + Archetype) di MAB
+ */
+async function recordStrategyPerformance({ personaId = 'ai_adaptive', archetypeId = 'emotional_reaction', platform = 'threads', views = 0, clicks = 0 }) {
+  try {
+    const docId = `strat_${personaId}_${platform}_${archetypeId}`;
+    const docRef = db.collection('agent_strategy_bandit').doc(docId);
+    const doc = await docRef.get();
+
+    const existing = doc.exists ? doc.data() : { total_views: 0, total_clicks: 0, sample_size: 0, avg_ctr: 0.02 };
+    const newViews = (existing.total_views || 0) + views;
+    const newClicks = (existing.total_clicks || 0) + clicks;
+    const newSampleSize = (existing.sample_size || 0) + 1;
+    const newCtr = newViews > 0 ? Number((newClicks / newViews).toFixed(4)) : (existing.avg_ctr || 0.02);
+
+    await docRef.set({
+      persona_id: personaId,
+      archetype_id: archetypeId,
+      platform,
+      total_views: newViews,
+      total_clicks: newClicks,
+      sample_size: newSampleSize,
+      avg_ctr: newCtr,
+      updated_at: new Date().toISOString()
+    }, { merge: true });
+
+    return { success: true, docId, newCtr };
+  } catch (err) {
+    console.error('[recordStrategyPerformance Error]:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
+  PERSONA_DEFINITIONS,
+  ARCHETYPE_DEFINITIONS,
+  selectContentStrategyByBandit,
+  recordStrategyPerformance,
   SEED_TEMPLATES,
   ensureSeedTemplates,
   selectTemplateByBandit,

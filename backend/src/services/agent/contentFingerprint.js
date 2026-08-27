@@ -13,6 +13,64 @@ const STOPWORDS = new Set([
 ]);
 
 /**
+ * Frasa Klise Robotik / AI Bot (Layer 1 Blacklist)
+ */
+const ROBOT_CLICHE_PATTERNS = [
+  /solusi\s+(terbaiknya|terbaik|tepat|sempurna)/i,
+  /keunggulan\s+(produk|utama|ini)/i,
+  /fitur\s+(unggulan|utama)/i,
+  /spesifikasi\s+(produk|lengkap)?/i,
+  /kelebihan\s+(produk|ini)/i,
+  /kenapa\s+(harus|wajib)\s+(checkout|beli|punya)/i,
+  /alasan\s+(harus|wajib)\s+punya/i,
+  /mengapa\s+(harus|memilih)/i,
+  /harga\s+(promo|diskon)\s*:\s*rp/i,
+  /dapatkan\s+sekarang\s+juga\s+di/i,
+  /segera\s+amankan\s+slot/i,
+  /rekomendasi\s+racun\s+shopee\s+yang\s+wajib\s+kamu\s+punya/i,
+];
+
+/**
+ * Deteksi pola robotik 2 lapis (Layer 1: Blacklisted Cliché, Layer 2: Structural AI Outline)
+ * @param {string} text
+ * @returns {Object} { is_robot: boolean, reasons: string[] }
+ */
+function detectRobotClichés(text = '') {
+  if (!text) return { is_robot: false, reasons: [] };
+  const clean = String(text).trim();
+  const reasons = [];
+
+  // Layer 1: Deterministic Cliché Frasa
+  for (const pattern of ROBOT_CLICHE_PATTERNS) {
+    if (pattern.test(clean)) {
+      reasons.push(`Terdeteksi frasa klise robotik: "${pattern.source}"`);
+    }
+  }
+
+  // Layer 2: Structural Outline (Bullet Points Robotik)
+  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
+  let bulletLineCount = 0;
+  for (const line of lines) {
+    if (/^[•\-\*]\s+/i.test(line) || /^\d+[\.\)]\s+/i.test(line)) {
+      bulletLineCount++;
+    }
+    // Deteksi label kaku seperti "Hook:", "Pain Point:", "Benefits:", "CTA:"
+    if (/^(hook|pain point|keunggulan|fitur|benefits|cta|solusi)\s*:/i.test(line)) {
+      reasons.push(`Terdeteksi format outline kaku: "${line}"`);
+    }
+  }
+
+  if (bulletLineCount >= 3) {
+    reasons.push(`Terdeteksi struktur bullet point robotik (${bulletLineCount} baris bullet).`);
+  }
+
+  return {
+    is_robot: reasons.length > 0,
+    reasons
+  };
+}
+
+/**
  * Ekstraksi token kata kunci penting dari teks
  * @param {string} text
  * @returns {Set<string>}
@@ -39,12 +97,6 @@ function extractCoreTokens(text = '') {
 
 /**
  * Menghitung Content Fingerprint Hash
- * @param {Object} opts
- * @param {string} opts.productId
- * @param {string} opts.hookText
- * @param {string} [opts.captionText]
- * @param {string} [opts.mediaUrl]
- * @returns {string} Fingerprint hash string
  */
 function generateContentFingerprint({ productId, hookText, captionText = '', mediaUrl = '' }) {
   const combined = `${productId}__${hookText}__${captionText.slice(0, 100)}__${mediaUrl}`;
@@ -69,9 +121,6 @@ function extractNGrams(text = '', n = 3) {
 
 /**
  * Menghitung derajat kemiripan token Jaccard & N-gram Similarity (0.0 - 1.0)
- * @param {string} textA 
- * @param {string} textB 
- * @returns {number} 0.0 sampai 1.0
  */
 function calculateTokenSimilarity(textA, textB) {
   const tokensA = extractCoreTokens(textA);
@@ -105,48 +154,147 @@ function calculateTokenSimilarity(textA, textB) {
   return (tokenSim * 0.6) + (ngramSim * 0.4);
 }
 
+/**
+ * Menghitung Composite Similarity Score (Semantic, Lexical, Structural, Hook, CTA)
+ */
+function calculateCompositeSimilarity(textA = '', textB = '', metaA = {}, metaB = {}) {
+  if (!textA || !textB) return 0;
+
+  // 1. Semantic Core Token Similarity (35%)
+  const tokensA = extractCoreTokens(textA);
+  const tokensB = extractCoreTokens(textB);
+  let semanticSim = 0;
+  if (tokensA.size > 0 && tokensB.size > 0) {
+    let inter = 0;
+    tokensA.forEach(t => { if (tokensB.has(t)) inter++; });
+    const un = new Set([...tokensA, ...tokensB]).size;
+    semanticSim = un > 0 ? inter / un : 0;
+  }
+
+  // 2. Lexical N-Gram Similarity (25%)
+  const ngA = extractNGrams(textA, 3);
+  const ngB = extractNGrams(textB, 3);
+  let lexicalSim = 0;
+  if (ngA.size > 0 && ngB.size > 0) {
+    let inter = 0;
+    ngA.forEach(g => { if (ngB.has(g)) inter++; });
+    const un = new Set([...ngA, ...ngB]).size;
+    lexicalSim = un > 0 ? inter / un : 0;
+  }
+
+  // 3. Structural Similarity (20%) - Length ratio & line structure
+  const lenRatio = Math.min(textA.length, textB.length) / Math.max(textA.length, textB.length || 1);
+  const linesA = textA.split('\n').filter(Boolean).length;
+  const linesB = textB.split('\n').filter(Boolean).length;
+  const lineRatio = Math.min(linesA, linesB) / Math.max(linesA, linesB || 1);
+  const structuralSim = (lenRatio * 0.5) + (lineRatio * 0.5);
+
+  // 4. Hook Similarity (10%)
+  const hookA = metaA.hook || textA.split('\n')[0] || '';
+  const hookB = metaB.hook || textB.split('\n')[0] || '';
+  const hookSim = calculateTokenSimilarity(hookA, hookB);
+
+  // 5. CTA Similarity (10%)
+  const ctaA = metaA.cta || (textA.split('\n').slice(-2).join(' ')) || '';
+  const ctaB = metaB.cta || (textB.split('\n').slice(-2).join(' ')) || '';
+  const ctaSim = calculateTokenSimilarity(ctaA, ctaB);
+
+  const composite = (semanticSim * 0.35) + (lexicalSim * 0.25) + (structuralSim * 0.20) + (hookSim * 0.10) + (ctaSim * 0.10);
+  return Math.min(1.0, Math.max(0.0, composite));
+}
 
 /**
- * Memeriksa apakah draf konten baru terlalu mirip (>65%) dengan postingan 7 hari terakhir
- * @param {Object} newDraft - { caption, hook_text, product_id, platform }
- * @param {Array} recentPosts - list of recent posts on same platform from product_post_memory
- * @param {number} threshold - threshold kemiripan (default 0.65 atau 65%)
- * @returns {Object} { is_duplicate: boolean, highest_similarity: number, conflicting_post: Object|null }
+ * Validasi Diversitas Konten Lintas 3 Ruang:
+ * 1. Current Batch Drafts (draf dalam siklus eksekusi yang sama)
+ * 2. Scheduled Posts (postingan yang sedang terjadwal di DB)
+ * 3. Recent Published Posts (product_post_memory 7 hari terakhir)
  */
-function checkContentSimilarity(newDraft, recentPosts = [], threshold = 0.65) {
-
+function validateCrossAccountContentDiversity({
+  newDraft,
+  currentBatchDrafts = [],
+  userScheduledPosts = [],
+  userRecentMemories = [],
+  threshold = 0.65
+}) {
   const newCaption = newDraft.caption || newDraft.content || '';
-  const newHook = newDraft.hook_text || '';
-  const newText = `${newHook} ${newCaption}`;
+  const newHook = newDraft.hook_text || newDraft.raw_hook || '';
+  const newCta = newDraft.cta_text || '';
 
   let highestSim = 0;
-  let conflictingPost = null;
+  let conflictSpace = null;
+  let conflictingItem = null;
 
-  for (const post of recentPosts) {
-    // Jika produknya sama atau angle-nya mirip, uji kemiripannya
-    const pastCaption = post.context_at_post?.caption_preview || post.raw_metrics?.caption || '';
-    const pastHook = post.context_at_post?.hook_type || '';
-    const pastText = `${pastHook} ${pastCaption}`;
-
-    const sim = calculateTokenSimilarity(newText, pastText);
+  // 1. Cek terhadap Current Batch Drafts
+  for (const draft of currentBatchDrafts) {
+    const dCaption = draft.caption || draft.content || '';
+    const dHook = draft.hook_text || draft.raw_hook || '';
+    const dCta = draft.cta_text || '';
+    const sim = calculateCompositeSimilarity(newCaption, dCaption, { hook: newHook, cta: newCta }, { hook: dHook, cta: dCta });
     if (sim > highestSim) {
       highestSim = sim;
-      conflictingPost = post;
+      conflictSpace = 'CURRENT_BATCH';
+      conflictingItem = draft;
     }
   }
 
-  const isDuplicate = highestSim >= threshold;
+  // 2. Cek terhadap Scheduled Posts di Database
+  for (const post of userScheduledPosts) {
+    const pCaption = post.content || '';
+    const sim = calculateCompositeSimilarity(newCaption, pCaption, { hook: newHook, cta: newCta }, {});
+    if (sim > highestSim) {
+      highestSim = sim;
+      conflictSpace = 'SCHEDULED_POSTS';
+      conflictingItem = post;
+    }
+  }
+
+  // 3. Cek terhadap Recent Published Memories di Database
+  for (const mem of userRecentMemories) {
+    const mCaption = mem.context_at_post?.caption_preview || mem.raw_metrics?.caption || '';
+    const mHook = mem.context_at_post?.hook_type || '';
+    const sim = calculateCompositeSimilarity(newCaption, mCaption, { hook: newHook, cta: newCta }, { hook: mHook });
+    if (sim > highestSim) {
+      highestSim = sim;
+      conflictSpace = 'PUBLISHED_MEMORY';
+      conflictingItem = mem;
+    }
+  }
+
+  const passed = highestSim < threshold;
 
   return {
-    is_duplicate: isDuplicate,
+    passed,
+    is_duplicate: !passed,
     highest_similarity: Number((highestSim * 100).toFixed(1)),
-    conflicting_post: isDuplicate ? conflictingPost : null,
     similarity_score: Number(highestSim.toFixed(3)),
+    conflict_space: passed ? null : conflictSpace,
+    conflicting_item: passed ? null : conflictingItem
+  };
+}
+
+/**
+ * Backward-compatible helper checkContentSimilarity
+ */
+function checkContentSimilarity(newDraft, recentPosts = [], threshold = 0.65) {
+  const result = validateCrossAccountContentDiversity({
+    newDraft,
+    userRecentMemories: recentPosts,
+    threshold
+  });
+  return {
+    is_duplicate: result.is_duplicate,
+    highest_similarity: result.highest_similarity,
+    conflicting_post: result.conflicting_item,
+    similarity_score: result.similarity_score
   };
 }
 
 module.exports = {
   generateContentFingerprint,
+  extractCoreTokens,
   calculateTokenSimilarity,
+  calculateCompositeSimilarity,
+  detectRobotClichés,
+  validateCrossAccountContentDiversity,
   checkContentSimilarity,
 };
