@@ -2,9 +2,144 @@ const express = require('express');
 const { db } = require('../config/firebase');
 const { authRequired } = require('../middleware/auth');
 const { publishPostNow } = require('../services/postService');
+const { ensureMediaArrayReady, isMediaRelatedFailure } = require('../services/mediaRehostService');
 const router = express.Router();
 
 router.use(authRequired);
+
+// GET /api/posts/failed-media-stats — statistik postingan gagal terkait media
+router.get('/failed-media-stats', async (req, res) => {
+  try {
+    const snap = await db.collection('posts')
+      .where('user_id', '==', req.user.id)
+      .where('status', '==', 'failed')
+      .limit(300)
+      .get();
+
+    let eligibleCount = 0;
+    let nonMediaCount = 0;
+
+    snap.docs.forEach(doc => {
+      const data = doc.data();
+      const hasShopeeMedia = (data.media || []).some(m => {
+        const u = typeof m === 'string' ? m : (m.media_url || m.url || '');
+        return u.includes('susercontent.com') || u.includes('shopee.co.id');
+      });
+      const mediaFailure = isMediaRelatedFailure(data);
+
+      if (hasShopeeMedia || mediaFailure) {
+        eligibleCount++;
+      } else {
+        nonMediaCount++;
+      }
+    });
+
+    res.json({
+      success: true,
+      total_failed: snap.docs.length,
+      eligible_count: eligibleCount,
+      non_media_count: nonMediaCount,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/posts/repair-failed-media — rehost media dan jadwalkan ulang target yang gagal karena media
+router.post('/repair-failed-media', async (req, res) => {
+  try {
+    const { limit = 200, batch_size = 10 } = req.body || {};
+
+    const snap = await db.collection('posts')
+      .where('user_id', '==', req.user.id)
+      .where('status', '==', 'failed')
+      .limit(parseInt(limit, 10) || 200)
+      .get();
+
+    const candidates = [];
+    snap.docs.forEach(doc => {
+      const data = { id: doc.id, ...doc.data() };
+      const hasShopeeMedia = (data.media || []).some(m => {
+        const u = typeof m === 'string' ? m : (m.media_url || m.url || '');
+        return u.includes('susercontent.com') || u.includes('shopee.co.id');
+      });
+      const mediaFailure = isMediaRelatedFailure(data);
+
+      if (hasShopeeMedia || mediaFailure) {
+        candidates.push(data);
+      }
+    });
+
+    if (candidates.length === 0) {
+      return res.json({
+        success: true,
+        repaired_count: 0,
+        message: 'Tidak ada postingan gagal terkait media yang perlu diperbaiki.'
+      });
+    }
+
+    let repairedCount = 0;
+    let errorsCount = 0;
+    const batchSize = Math.max(1, Math.min(parseInt(batch_size, 10) || 10, 20));
+
+    for (let b = 0; b < candidates.length; b += batchSize) {
+      const chunk = candidates.slice(b, b + batchSize);
+      
+      for (const post of chunk) {
+        try {
+          const docRef = db.collection('posts').doc(post.id);
+
+          // 1. Rehost Media Array
+          const mediaRes = await ensureMediaArrayReady(post.media || [], { concurrency: 2 });
+
+          // 2. Target Status Safety: HANYA reset target yang statusnya 'failed'
+          const updatedTargets = (post.targets || []).map(t => {
+            if (t.status === 'failed') {
+              return {
+                ...t,
+                status: 'pending',
+                error_message: null,
+                attempt_count: 0
+              };
+            }
+            return t; // Pertahankan target yang sudah 'success'
+          });
+
+          const updatePayload = {
+            media: mediaRes.media,
+            targets: updatedTargets,
+            status: 'scheduled',
+            updated_at: new Date().toISOString(),
+            repaired_at: new Date().toISOString()
+          };
+
+          if (post.first_reply && post.first_reply.status === 'failed') {
+            updatePayload['first_reply.status'] = 'pending';
+            updatePayload['first_reply.reply_last_error'] = null;
+          }
+
+          await docRef.update(updatePayload);
+          repairedCount++;
+        } catch (postErr) {
+          errorsCount++;
+          console.error(`[repair-failed-media] Error on post #${post.id}:`, postErr.message);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      scanned_count: snap.docs.length,
+      eligible_count: candidates.length,
+      repaired_count: repairedCount,
+      errors_count: errorsCount,
+      message: `Berhasil memperbaiki & merehost media pada ${repairedCount} postingan.`
+    });
+  } catch (err) {
+    console.error('Error in /repair-failed-media:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // GET /api/posts?status=draft|scheduled|posted|failed&platform=facebook|instagram|threads&account_id=...&page=1&limit=20
 router.get('/', async (req, res) => {

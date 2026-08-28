@@ -3,6 +3,7 @@ const env = require('../config/env');
 const { postToFacebook } = require('./facebookService');
 const { postToInstagram } = require('./instagramService');
 const { postToThreads, publishThreadsPost, publishThreadsReply } = require('./threadsService');
+const { ensureMediaArrayReady } = require('./mediaRehostService');
 
 async function addLog(userId, action, details) {
   await db.collection('logs').add({
@@ -61,6 +62,24 @@ async function publishPostNow(postId) {
   if (!doc.exists) throw new Error('Postingan tidak ditemukan.');
 
   const post = doc.data();
+
+  // MEDIA RESOLVER: Ensure all media items are publicly accessible by Meta crawlers (Rehost Shopee/non-public to Cloudinary)
+  if (Array.isArray(post.media) && post.media.length > 0) {
+    try {
+      const mediaRes = await ensureMediaArrayReady(post.media, { concurrency: 3 });
+      if (mediaRes.updated && Array.isArray(mediaRes.media) && mediaRes.media.length > 0) {
+        post.media = mediaRes.media;
+        await docRef.update({
+          media: mediaRes.media,
+          updated_at: new Date().toISOString()
+        });
+        console.log(`[publishPostNow] Updated post #${postId} with rehosted public media.`);
+      }
+    } catch (mediaRehostErr) {
+      console.warn(`[publishPostNow] Warning during media resolution for post #${postId}:`, mediaRehostErr.message);
+    }
+  }
+
   let targets = post.targets || [];
 
   if (targets.length === 0) {

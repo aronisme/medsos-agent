@@ -206,6 +206,21 @@ async function processScheduledPosts() {
       }
     }
 
+    // Check 6: Cloudinary Auto-Cleanup (Retensi 30 Hari, Dijalankan Setiap 24 Jam)
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    const lastCloudinaryCleanup = Number(lockData.last_cloudinary_cleanup_epoch) || 0;
+    if (now - lastCloudinaryCleanup >= twentyFourHours) {
+      updateLocks.last_cloudinary_cleanup_epoch = now;
+      const { cleanupOldCloudinaryMedia } = require('../services/mediaRehostService');
+      try {
+        console.log('[scheduler] Menjalankan Auto-Cleanup Media Cloudinary Kadaluarsa (> 30 hari)...');
+        const cleanupRes = await cleanupOldCloudinaryMedia({ retentionDays: 30, limit: 50 });
+        results.push({ type: 'cloudinary_cleanup', ...cleanupRes });
+      } catch (cleanErr) {
+        console.error('[scheduler] Error auto-cleanup Cloudinary:', cleanErr.message);
+      }
+    }
+
     // Simpan timestamp lock terbaru jika ada background task yang dipicu
     if (Object.keys(updateLocks).length > 0) {
       await lockRef.set(updateLocks, { merge: true });

@@ -180,8 +180,13 @@ backend/src/
      - Jika mode akun disetel ke `threadsMediaMode = 'no_media'`, atau jika stok foto/video segar produk telah habis di Threads, kurasi media mengembalikan `{ media_type: 'text', selected_media: [], no_fresh_media: false }`.
      - Produk tidak digagalkan/di-reject, melainkan diterbitkan dalam mode Teks Murni ber-link yang secara native memicu crawler Meta Threads untuk membuat kartu preview interaktif (*Link Card Preview*).
   5. Pada Facebook/Instagram, jika media habis, agen menolak kurasi (`no_fresh_media: true`) dan memilih produk lain.
-
----
+  6. **Media Delivery Resolver & Public CDN Layer (`mediaRehostService.js`)**:
+     - **Masalah CDN Non-Publik**: Server CDN e-commerce (Shopee `down-id.img.susercontent.com`, `down-bs-id.vod...`) memblokir crawler bot Meta (`facebookexternalhit/1.1`) dengan HTTP 403 / connection drop jika diakses langsung oleh Meta.
+     - **Last-Line-of-Defense Resolution**: Tepat sebelum dipublish (`publishPostNow` di `postService.js`), seluruh media melewati `mediaRehostService`.
+     - **Bypass Trusted Public CDN**: URL yang sudah berada di `res.cloudinary.com` atau CDN publik tepercaya langsung dilewatkan tanpa re-upload.
+     - **SSRF & Security Guard**: Menolak IP private/internal (`127.0.0.1`, `169.254.x.x`), membatasi host sumber terdaftar (`ALLOWED_SOURCE_HOSTS`), batas ukuran file (Image: 15MB, Video: 50MB), dan timeout 20s.
+     - **Two-Tier Caching**: Caching instan di memori + persistent Firestore `media_cache` (berbasis SHA256 URL ternormalisasi) untuk mencegah upload berulang.
+     - **Multi-Target Idempotency**: Saat recovery/repair, sistem HANYA me-reset target yang berstatus `failed` terkait media, menjaga target yang sudah `success` dari duplikasi posting.
 
 ### Pilar 3: Identity-Aware Copywriting, Creator Archetypes & Contextual MAB
 *Files: `backend/src/services/agent/templateService.js` & `backend/src/services/agent/copywritingService.js`*

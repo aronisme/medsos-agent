@@ -46,6 +46,13 @@ export default function PostList() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isDeleteAllMode, setIsDeleteAllMode] = useState(false);
 
+  // Media Rehost & Repair State
+  const [showRepairModal, setShowRepairModal] = useState(false);
+  const [repairStats, setRepairStats] = useState(null);
+  const [isFetchingStats, setIsFetchingStats] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [repairResult, setRepairResult] = useState(null);
+
   const fetchAccounts = async () => {
     try {
       const res = await api.get('/accounts');
@@ -146,6 +153,34 @@ export default function PostList() {
       alert('Gagal menghapus postingan: ' + (err.response?.data?.error || err.message));
     } finally {
       setIsBulkDeleting(false);
+    }
+  };
+
+  const handleOpenRepairModal = async () => {
+    setIsFetchingStats(true);
+    setRepairResult(null);
+    setShowRepairModal(true);
+    try {
+      const res = await api.get('/posts/failed-media-stats');
+      setRepairStats(res.data);
+    } catch (err) {
+      console.error('Gagal mengambil statistik media gagal:', err);
+      setRepairStats({ total_failed: 0, eligible_count: 0, non_media_count: 0 });
+    } finally {
+      setIsFetchingStats(false);
+    }
+  };
+
+  const handleExecuteRepair = async () => {
+    setIsRepairing(true);
+    try {
+      const res = await api.post('/posts/repair-failed-media', { limit: 200, batch_size: 10 });
+      setRepairResult(res.data);
+      fetchPosts();
+    } catch (err) {
+      alert('Gagal memperbaiki media: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsRepairing(false);
     }
   };
 
@@ -258,6 +293,18 @@ export default function PostList() {
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+
+          {statusFilter === 'failed' && (
+            <button
+              type="button"
+              onClick={handleOpenRepairModal}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-white shadow-lg shadow-indigo-950/50 border border-indigo-400/30 transition-all cursor-pointer animate-pulse"
+              title="Perbaiki media Shopee yang gagal dan jadwalkan ulang"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Perbaiki Media & Jadwal Ulang</span>
+            </button>
+          )}
         </div>
       </div>
       
@@ -513,6 +560,110 @@ export default function PostList() {
         </div>
       )}
 
+      {/* Media Rehost & Repair Modal */}
+      {showRepairModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-indigo-500/40 rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
+                  <RefreshCw className={`w-5 h-5 ${isRepairing ? 'animate-spin' : ''}`} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white">Perbaiki Media & Jadwal Ulang</h3>
+                  <p className="text-[11px] text-slate-400">Rehost otomatis media Shopee ke Cloudinary</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isRepairing}
+                onClick={() => setShowRepairModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {isFetchingStats ? (
+              <div className="p-8 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin text-indigo-400" />
+                <span>Menganalisis daftar postingan gagal...</span>
+              </div>
+            ) : repairResult ? (
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                  <Check className="w-5 h-5" />
+                  <span>{repairResult.message || 'Perbaikan Berhasil!'}</span>
+                </div>
+                <div className="text-xs text-slate-300 space-y-1">
+                  <p>• Postingan Diperbaiki: <strong className="text-white">{repairResult.repaired_count}</strong></p>
+                  <p>• Error / Gagal: <strong className="text-white">{repairResult.errors_count || 0}</strong></p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs text-slate-300">
+                <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Total Postingan Gagal Terdeteksi:</span>
+                    <span className="font-bold text-rose-400">{repairStats?.total_failed || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Kandidat Terkait Masalah CDN Shopee:</span>
+                    <span className="font-bold text-indigo-400">{repairStats?.eligible_count || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Kegagalan Non-Media (Dilewati):</span>
+                    <span className="font-bold text-amber-400">{repairStats?.non_media_count || 0}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl text-[11px] text-slate-300 space-y-1 leading-relaxed">
+                  <p className="font-semibold text-indigo-300">🛡️ Tindakan Aman Sistem:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-400">
+                    <li>Mengunduh gambar/video Shopee dengan header browser resmi.</li>
+                    <li>Mengunggah & meng-cache aset secara permanen ke Cloudinary.</li>
+                    <li>Memperbarui URL media di database Firestore.</li>
+                    <li><strong className="text-slate-200">Hanya me-reset target yang gagal</strong> (target yang sudah sukses di platform lain tetap aman dari duplikasi).</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={isRepairing}
+                onClick={() => setShowRepairModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+              >
+                {repairResult ? 'Tutup' : 'Batal'}
+              </button>
+
+              {!repairResult && (
+                <button
+                  type="button"
+                  disabled={isRepairing || isFetchingStats || (repairStats?.eligible_count === 0)}
+                  onClick={handleExecuteRepair}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+                >
+                  {isRepairing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Sedang Merehost Media...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Mulai Perbaiki ({repairStats?.eligible_count || 0} Post)</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detail & Action Modal */}
       {selectedPost && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -575,7 +726,7 @@ export default function PostList() {
                   <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Media Terlampir</span>
                   <div className="mt-1.5 flex items-center gap-3 overflow-x-auto pb-1">
                     {selectedPost.post.media.map((m, idx) => {
-                      const mediaUrl = typeof m === 'string' ? m : (m?.media_url || m?.url || '');
+                      const mediaUrl = typeof m === 'string' ? m : (m?.source_url || m?.media_url || m?.url || '');
                       const mediaType = typeof m === 'object' && m?.media_type ? m.media_type : (m?.type || 'image');
                       if (!mediaUrl) return null;
 
@@ -589,8 +740,12 @@ export default function PostList() {
                               alt="Media"
                               className="w-full h-full object-cover"
                               onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = 'https://placehold.co/100x100/1e293b/94a3b8?text=Shopee+Image';
+                                if (m?.source_url && e.target.src !== m.source_url) {
+                                  e.target.src = m.source_url;
+                                } else {
+                                  e.target.onerror = null;
+                                  e.target.src = 'https://placehold.co/100x100/1e293b/94a3b8?text=Shopee+Image';
+                                }
                               }}
                             />
                           )}
