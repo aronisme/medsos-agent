@@ -185,6 +185,11 @@ ${personaRules}
 ARKETIPE PENCERITAAN: [${archetypeName}]
 ${archetypeRules}
 
+STRUKTUR 3-LAPIS VIRAL UNTUK THREADS:
+${isThreads ? `1. Baris 1 (High-Curiosity Shock Hook): Awali dengan hook emosional/FOMO yang menghentikan scroll (Contoh: "INI KENAPA GAK VIRAL DARI DULU SIH 😭", "Gue kira cuma bisa diikat mati kayak ikatan batin 🤣", "Nyesel baru tau trik ini sekarang!", "IN THIS ECONOMY ‼️ 😭 nemu...").
+2. Baris 2-3 (Satisfying Utility / Relatable Story): Jelaskan kemudahan, trik pemakaian, atau kenyamanan barang secara mengalir tanpa bullet points.
+3. Baris Akhir (Call-to-Save): Sisipkan ajakan menyimpan konten yang natural (Contoh: "Wajib di-save nih biar gak bingung pas...", "Wajib save dulu biar outfit kamu makin rapi!").` : 'Tulis cerita mengalir yang menarik dari masalah sehari-hari menuju solusi praktis produk.'}
+
 PANTANGAN MUTLAK (ANTI-ROBOT & ANTI-BOT LAWS):
 1. DILARANG KERAS menggunakan frasa kaku AI bot:
    - "Solusi terbaiknya..."
@@ -209,7 +214,7 @@ Keluarkan output HANYA dalam format JSON valid:
   "caption": "Teks postingan utama yang mengalir santai tanpa bullet points dan tanpa format bot",
   "raw_hook": "Kalimat pembuka / hook 1 baris",
   "cta_type": "soft_cta",
-  "first_reply_intro": "Kalimat santai pengantar spill link di komentar (contoh: 'Spill link tokonya di sini ya 👇' atau 'Ini link produknya buat yang mau checkout 👇')"
+  "first_reply_intro": "Kalimat kontekstual pengantar spill link di komentar sesuai jenis barang (contoh: 'Tali/aksesori penggantinya cek di sini ya 👇' atau 'Alat/bahannya belinya di sini ya 👇' atau 'Spill tokonya di sini ya 👇')"
 }`;
 }
 
@@ -274,7 +279,8 @@ async function generatePostContent({
       `Platform Target: ${platform.toUpperCase()}`,
       `Mode Threads: ${isThreadsNoMedia ? 'NO_MEDIA_LINK_CARD (Tautan pendek akan disisipkan di caption)' : 'WITH_MEDIA (Tautan disajikan di first-reply)'}`,
       `Arketipe: ${strategy.archetype.name}`,
-      `Sudut Pandang: ${activeAngle}`
+      `Sudut Pandang: ${activeAngle}`,
+      `Instruksi First-Reply Contextual: Buat first_reply_intro yang menyebut jenis barang/alat secara natural (contoh: "Tali/aksesori penggantinya cek di sini ya 👇", "Alat/bahannya belinya di sini ya 👇", "Wadah/perabotnya di sini ya 👇", "Spill tokonya di sini ya 👇")`
     ].join('\n');
 
     let parsedCopy = null;
@@ -298,16 +304,26 @@ async function generatePostContent({
       console.warn(`[generatePostContent] AI call warning: ${aiErr.message}. Menggunakan fallback organik.`);
     }
 
-    // Emergency Fallback Organik jika AI offline (Human Ballpark Price Framing)
+    // Emergency Fallback Organik jika AI offline (Human Ballpark Price Framing & 3-Layer Viral Hook)
     if (!parsedCopy || !parsedCopy.caption) {
       const priceMention = priceInfo.shouldMentionPrice ? `harganya ${priceInfo.displayPhrase} doang` : 'kualitasnya beneran juara dan ramah di kantong';
       if (isThreads) {
-        parsedCopy = {
-          caption: `IN THIS ECONOMY ‼️ 😭 nemu ${naturalProductRef} yang vibesnya keliatan mahal tapi ${priceMention}, cakep parah 🤌✨`,
-          raw_hook: `IN THIS ECONOMY ‼️ 😭`,
-          cta_type: isThreadsNoMedia ? 'link_card_cta' : 'soft_cta',
-          first_reply_intro: 'Spill link tokonya di sini ya 👇'
-        };
+        const useViralLifeHack = Math.random() > 0.5;
+        if (useViralLifeHack) {
+          parsedCopy = {
+            caption: `INI KENAPA GAK VIRAL DARI DULU SIH 😭 Ternyata pakai ${naturalProductRef} bikin lebih praktis dan rapi seketika ✨ Wajib di-save nih biar gak bingung pas butuh!`,
+            raw_hook: `INI KENAPA GAK VIRAL DARI DULU SIH 😭`,
+            cta_type: isThreadsNoMedia ? 'link_card_cta' : 'soft_cta',
+            first_reply_intro: `Spill ${naturalProductRef} aslinya di sini ya 👇`
+          };
+        } else {
+          parsedCopy = {
+            caption: `IN THIS ECONOMY ‼️ 😭 nemu ${naturalProductRef} yang vibesnya keliatan mahal tapi ${priceMention}, cakep parah 🤌✨ Wajib save dulu!`,
+            raw_hook: `IN THIS ECONOMY ‼️ 😭`,
+            cta_type: isThreadsNoMedia ? 'link_card_cta' : 'soft_cta',
+            first_reply_intro: `Spill tokonya di sini ya 👇`
+          };
+        }
       } else {
         parsedCopy = {
           caption: `Rekomendasi ${naturalProductRef} yang beneran bikin aktivitas harian jadi lebih simpel dan hemat dengan kualitas yang juara ✨`,

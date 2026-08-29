@@ -14,6 +14,7 @@ function normalizeMetrics(rawMetrics = {}) {
   const likes = Math.max(Number(rawMetrics.likes) || 0, 0);
   const comments = Math.max(Number(rawMetrics.comments) || 0, 0);
   const shares = Math.max(Number(rawMetrics.shares) || 0, 0);
+  const reposts = Math.max(Number(rawMetrics.reposts) || 0, 0);
   const saves = Math.max(Number(rawMetrics.saves) || 0, 0);
   const clicks = Math.max(Number(rawMetrics.affiliate_clicks) || 0, 0);
 
@@ -23,12 +24,15 @@ function normalizeMetrics(rawMetrics = {}) {
   const likeRate = views > 0 ? likes / baseViews : 0;
   const commentRate = views > 0 ? comments / baseViews : 0;
   const shareRate = views > 0 ? shares / baseViews : 0;
+  const repostRate = views > 0 ? reposts / baseViews : 0;
   const saveRate = views > 0 ? saves / baseViews : 0;
   const clickThroughRate = views > 0 ? clicks / baseViews : 0;
+  const viralDistributionRate = views > 0 ? (shares + reposts) / baseViews : 0;
 
-  // Custom weighted engagement score (komentar, share, save bernilai lebih tinggi dari like)
+  // Custom weighted engagement score:
+  // Di Threads/FB, Shares & Reposts (4x) serta Saves (3x) bernilai eksponensial dalam algoritma rekomendasi dibanding Likes (1x)
   const weightedEngScore = views > 0 
-    ? (likes * 1 + comments * 2 + shares * 3 + saves * 2) / baseViews 
+    ? (likes * 1 + comments * 2 + shares * 4 + reposts * 4 + saves * 3) / baseViews 
     : 0;
 
   return {
@@ -36,12 +40,15 @@ function normalizeMetrics(rawMetrics = {}) {
     likes,
     comments,
     shares,
+    reposts,
     saves,
     affiliate_clicks: clicks,
     like_rate: Number(likeRate.toFixed(4)),
     comment_rate: Number(commentRate.toFixed(4)),
     share_rate: Number(shareRate.toFixed(4)),
+    repost_rate: Number(repostRate.toFixed(4)),
     save_rate: Number(saveRate.toFixed(4)),
+    viral_distribution_rate: Number(viralDistributionRate.toFixed(4)),
     click_through_rate: Number(clickThroughRate.toFixed(4)),
     weighted_engagement_score: Number(weightedEngScore.toFixed(4)),
   };

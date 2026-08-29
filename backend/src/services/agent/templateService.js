@@ -86,11 +86,12 @@ const PERSONA_DEFINITIONS = {
   practical_expert: {
     id: 'practical_expert',
     name: '🧠 Practical Life-Hack',
-    description: 'Solusi cerdas, tips bermanfaat & efisien',
+    description: 'Solusi cerdas, tips bermanfaat, high-utility & viral problem solving',
     tone_rules: [
-      'Fokus pada life-hack efisiensi waktu, kerapihan rumah, atau solusi hemat.',
-      'Gunakan frasa: "Ini kenapa gak viral dari dulu sih", "Ternyata segampang ini", "Wajib save buat yang sering...".',
-      'Berikan insight fungsional yang langsung bisa dipraktikkan.'
+      'Gunakan formula 3-lapis: (1) Hook emosional/FOMO shock, (2) Solusi fungsional memuaskan (satisfying), (3) Call-to-save.',
+      'Contoh Hook: "INI KENAPA GAK VIRAL DARI DULU SIH 😭", "Gue kira cuma bisa begini doang kayak ikatan batin 🤣", "Nyesel baru tau trik ini sekarang!", "Ternyata bikin/ngerawat ... segampang ini".',
+      'Tekankan Call-to-Save di baris terakhir: "Wajib di-save nih biar gak bingung pas...", "Wajib save dulu biar sepatu/celana/barang kamu makin awet".',
+      'Berikan insight fungsional yang praktis, aplikatif, dan memicu penonton menonton sampai selesai (high dwell time).'
     ],
     preferred_archetypes: ['pov_lifehack', 'honest_spill', 'value_shock']
   },
@@ -128,7 +129,7 @@ const ARCHETYPE_DEFINITIONS = {
     id: 'pov_lifehack',
     name: 'POV Life-Hack & Satisfying Solution',
     objective_fit: ['clicks', 'engagement'],
-    rules: 'Format POV atau tips menyelesaikan masalah sehari-hari secara satisfying. Contoh: "POV: Pemandangan pas lagi refill sabun tanpa ada drama tumpah-tumpah berantakan. Wadah pump yang satu ini juara banget, tinggal cemplungin pouch isi ulang langsung dari kemasannya. Praktis pol! 🧴✨".',
+    rules: 'Gunakan struktur 3-lapis viral: (1) Hook shock/curiosity ("INI KENAPA GAK VIRAL DARI DULU SIH 😭" atau "Gue kira cuma bisa diikat mati kayak ikatan batin 🤣"), (2) Cerita penyelesaian masalah fungsional/trik praktis yang satisfying tanpa drama, (3) Call-to-save ("Wajib di-save nih biar..."). JANGAN buat bullet points!',
     default_cta: 'direct_link_cta'
   },
   value_shock: {
@@ -362,6 +363,26 @@ const SEED_TEMPLATES = [
     category: 'Universal',
     angle: 'Flash Promo FOMO',
     structure: '{HOOK}\n\n{PRODUCT_NAME}\n{USP_BULLETS}\n\n{CTA_LINK}',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 14. Threads Viral 3-Layer Life-Hack & Save Trigger
+  {
+    id: 'tpl_threads_viral_lifehack_14',
+    name: 'Threads Viral 3-Layer Life-Hack',
+    category: 'Universal',
+    angle: 'Practical Life-Hack',
+    structure: 'INI KENAPA GAK VIRAL DARI DULU SIH 😭\n\n{PAIN_POINT} Ternyata trik pakai {PRODUCT_NAME} ini praktis pol dan bikin rapi seketika ✨\n\nWajib di-save nih biar gak bingung pas butuh nanti!',
+    platform_fit: ['threads'],
+    is_active: true,
+  },
+  // 15. Threads Satisfying DIY & Craft Tutorial
+  {
+    id: 'tpl_threads_satisfying_craft_15',
+    name: 'Threads Satisfying DIY & Craft Tutorial',
+    category: 'Universal',
+    angle: 'Storytelling',
+    structure: 'Gue kira cuma bisa ribet doang 🤣 Ternyata bikin/ngerawat {PRODUCT_NAME} hasilnya secakep ini!\n\nKreatif parah sih, wajib save dulu buat ngisi waktu luang pas weekend 💖',
     platform_fit: ['threads'],
     is_active: true,
   }
