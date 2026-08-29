@@ -51,7 +51,11 @@ async function matchAffiliateLinks(caption, userId = null, additionalText = '') 
       processedCodes.add(code);
       const data = docSnap.data();
       const totalClicks = Number(data.total_clicks) || 0;
-      const humanClicks = Number(data.human_clicks) || totalClicks;
+      const humanClicks = data.human_clicks !== undefined ? Number(data.human_clicks) : 0;
+      const crawlerClicks = Number(data.crawler_clicks) || 0;
+      const prefetchClicks = Number(data.prefetch_clicks) || 0;
+      const scannerClicks = Number(data.scanner_clicks) || 0;
+      const unknownClicks = Number(data.unknown_clicks) || 0;
 
       matchedLinks.push({
         code,
@@ -62,6 +66,10 @@ async function matchAffiliateLinks(caption, userId = null, additionalText = '') 
         price: data.price || 0,
         total_clicks: totalClicks,
         human_clicks: humanClicks,
+        crawler_clicks: crawlerClicks,
+        prefetch_clicks: prefetchClicks,
+        scanner_clicks: scannerClicks,
+        unknown_clicks: unknownClicks,
         destination_url: data.destination_url || data.product_url || '',
       });
     }
@@ -69,11 +77,19 @@ async function matchAffiliateLinks(caption, userId = null, additionalText = '') 
 
   const totalClicks = matchedLinks.reduce((sum, l) => sum + l.total_clicks, 0);
   const humanClicks = matchedLinks.reduce((sum, l) => sum + l.human_clicks, 0);
+  const crawlerClicks = matchedLinks.reduce((sum, l) => sum + (l.crawler_clicks || 0), 0);
+  const prefetchClicks = matchedLinks.reduce((sum, l) => sum + (l.prefetch_clicks || 0), 0);
+  const scannerClicks = matchedLinks.reduce((sum, l) => sum + (l.scanner_clicks || 0), 0);
+  const unknownClicks = matchedLinks.reduce((sum, l) => sum + (l.unknown_clicks || 0), 0);
 
   return {
     short_links: matchedLinks,
     total_clicks: totalClicks,
     human_clicks: humanClicks,
+    crawler_clicks: crawlerClicks,
+    prefetch_clicks: prefetchClicks,
+    scanner_clicks: scannerClicks,
+    unknown_clicks: unknownClicks,
   };
 }
 

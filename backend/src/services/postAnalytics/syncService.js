@@ -150,7 +150,9 @@ async function syncAllPostsAnalytics(userId, options = {}) {
       // Primary Attribution: Relasi Database ID > Fallback Regex Matcher
       const matchedProductId = matchedPost?.product_id || matchedPost?.first_reply?.product_id || affiliateData.short_links?.[0]?.product_id || null;
       const shortlinkCode = affiliateData.short_links?.[0]?.code || '';
-      const totalClicks = normalized.affiliate?.human_clicks || normalized.affiliate?.total_clicks || 0;
+      const humanClicks = normalized.affiliate?.human_clicks !== undefined 
+        ? Number(normalized.affiliate.human_clicks) 
+        : (Number(affiliateData.human_clicks) || 0);
       const rawViews = Number(normalized.metrics?.views) || Number(normalized.metrics?.reach) || 0;
 
       const rawMetrics = {
@@ -160,7 +162,7 @@ async function syncAllPostsAnalytics(userId, options = {}) {
         comments: (Number(normalized.metrics?.comments) || 0) + (Number(normalized.metrics?.replies) || 0),
         shares: (Number(normalized.metrics?.shares) || 0) + (Number(normalized.metrics?.reposts) || 0) + (Number(normalized.metrics?.quotes) || 0),
         saves: Number(normalized.metrics?.saves) || 0,
-        affiliate_clicks: totalClicks,
+        affiliate_clicks: humanClicks,
       };
 
       const targetPostId = matchedPost ? matchedPost.id : docId;
@@ -178,11 +180,11 @@ async function syncAllPostsAnalytics(userId, options = {}) {
 
       await syncPostMemoryMetrics(targetPostId, rawMetrics, fallbackContext);
 
-      // 5. Update Multi-Armed Bandit Template Performance
+      // 5. Update Multi-Armed Bandit Template Performance (Strictly with Verified Human Clicks)
       const matchedMemDoc = await db.collection('product_post_memory').doc(`mem_${targetPostId}`).get();
       const templateId = matchedMemDoc.exists ? matchedMemDoc.data()?.context_at_post?.template_id : null;
       if (templateId) {
-        await recordTemplatePerformance(templateId, item.platform, 'clicks', rawViews, totalClicks);
+        await recordTemplatePerformance(templateId, item.platform, 'clicks', rawViews, humanClicks);
       }
 
       totalSaved++;
