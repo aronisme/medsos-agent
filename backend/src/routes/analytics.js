@@ -27,7 +27,7 @@ function normalizePlatformName(p) {
   if (clean === 'youtube' || clean.includes('youtube') || clean === 'youtu.be') return 'YouTube';
   if (clean === 'pinterest' || clean.includes('pinterest')) return 'Pinterest';
   if (clean === 'google search' || clean === 'google' || clean.includes('google')) return 'Google Search';
-  if (clean === 'direct' || clean === 'direct / link' || clean === '-') return 'Direct / Link';
+  if (clean === 'direct' || clean === 'direct / link' || clean === 'direct / external' || clean === '-') return 'Direct / Link';
   return p;
 }
 
@@ -183,7 +183,8 @@ router.get('/overview', async (req, res) => {
 
     filteredClickLogs.forEach(c => {
       periodTotalClicks++;
-      if (c.is_bot) periodBotClicks++;
+      const isBotClick = c.counted_as_human === false || c.is_bot;
+      if (isBotClick) periodBotClicks++;
       else periodHumanClicks++;
 
       const logDate = c.date || (c.timestamp ? c.timestamp.split('T')[0] : null);
@@ -197,20 +198,21 @@ router.get('/overview', async (req, res) => {
         if (trendMap.has(h)) {
           const item = trendMap.get(h);
           item.clicks++;
-          if (c.is_bot) item.bot++;
+          if (isBotClick) item.bot++;
           else item.human++;
         }
       } else {
         if (logDate && trendMap.has(logDate)) {
           const item = trendMap.get(logDate);
           item.clicks++;
-          if (c.is_bot) item.bot++;
+          if (isBotClick) item.bot++;
           else item.human++;
         }
       }
 
       // Platform distribution (Normalized)
-      const rawPlatform = c.platform || 'Direct / Link';
+      // Use actual_source (new schema) with fallback to platform (old schema / backward compat)
+      const rawPlatform = c.actual_source || c.platform || 'Direct / Link';
       const normalizedPlat = normalizePlatformName(rawPlatform);
       if (platformBreakdown[normalizedPlat] !== undefined) {
         platformBreakdown[normalizedPlat]++;
@@ -242,8 +244,9 @@ router.get('/overview', async (req, res) => {
     });
 
     // Determine Top Platform in Period
-    let topPlatform = 'Facebook';
-    let topPlatformCount = -1;
+    // Require count > 0 so we never pick a zero-traffic platform as "top"
+    let topPlatform = null;
+    let topPlatformCount = 0;
     Object.entries(platformBreakdown).forEach(([plat, count]) => {
       if (count > topPlatformCount && plat !== 'Lainnya' && plat !== 'Direct / Link') {
         topPlatformCount = count;
@@ -263,7 +266,7 @@ router.get('/overview', async (req, res) => {
         bot_clicks: periodBotClicks,
         all_time_clicks: totalClicksAllTime,
         clicks_today: clicksToday,
-        top_platform: periodTotalClicks > 0 ? topPlatform : 'Belum ada data',
+        top_platform: topPlatform || 'Belum ada data',
         top_product: topProduct
       },
       trend: trend,
@@ -385,11 +388,12 @@ router.get('/links/:code', async (req, res) => {
       if (logDate && trendMap.has(logDate)) {
         const item = trendMap.get(logDate);
         item.clicks++;
-        if (c.is_bot) item.bot++;
+        if (c.counted_as_human === false || c.is_bot) item.bot++;
         else item.human++;
       }
 
-      const p = c.platform || 'Direct / Link';
+      // actual_source = new schema, platform = backward-compat fallback for old docs
+      const p = c.actual_source || c.platform || 'Direct / Link';
       platformBreakdown[p] = (platformBreakdown[p] || 0) + 1;
 
       const dev = c.device || 'Mobile';

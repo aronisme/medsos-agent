@@ -64,7 +64,7 @@ async function generatePerformanceReportText(userId) {
     const recentClicks = clicksDocs.filter(c => (c.timestamp || '') >= oneDayAgoIso);
 
     const totalClicks = recentClicks.length;
-    const botClicks = recentClicks.filter(c => c.is_bot).length;
+    const botClicks = recentClicks.filter(c => c.counted_as_human === false || c.is_bot).length;
     const humanClicks = totalClicks - botClicks;
 
     // 2. Hitung statistik platform & produk terpopuler
@@ -73,7 +73,8 @@ async function generatePerformanceReportText(userId) {
 
     recentClicks.forEach(c => {
       // Platform
-      const plat = c.platform || 'Direct / Link';
+      // actual_source = new schema, platform = backward-compat fallback for old docs
+      const plat = c.actual_source || c.platform || 'Direct / Link';
       platformBreakdown[plat] = (platformBreakdown[plat] || 0) + 1;
 
       // Produk

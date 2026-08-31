@@ -353,6 +353,11 @@ router.get('/:code', async (req, res) => {
 
         // A. Create Click Event Ledger Document (Source of Truth)
         const clickDocRef = db.collection('link_clicks').doc();
+        // Normalize 'Direct / External' to 'Direct / Link' for consistent labeling
+        const normalizedSource = sourceAttribution.actual_source === 'Direct / External'
+          ? 'Direct / Link'
+          : sourceAttribution.actual_source;
+
         const clickLog = {
           id: clickDocRef.id,
           code: code,
@@ -362,13 +367,21 @@ router.get('/:code', async (req, res) => {
           product_url: data.product_url || '',
           destination_url: destination,
           target_platform: targetPlatform,
-          actual_source: sourceAttribution.actual_source,
+          actual_source: normalizedSource,
+          // Backward-compatible alias so analytics consumers reading 'platform' keep working
+          platform: normalizedSource,
           source_confidence: sourceAttribution.source_confidence,
           source_evidence: sourceAttribution.source_evidence,
           classification: analysis.classification,
           risk_score: analysis.riskScore,
           confidence: analysis.confidence,
           counted_as_human: countedAsHuman,
+          // Backward-compatible alias so analytics consumers reading 'is_bot' keep working
+          is_bot: !countedAsHuman && (
+            analysis.classification === 'crawler' ||
+            analysis.classification === 'scanner' ||
+            analysis.classification === 'prefetch'
+          ),
           counting_reason: countingReason,
           signals: analysis.signals,
           post_id: data.post_id || data.tracking?.post_id || '',

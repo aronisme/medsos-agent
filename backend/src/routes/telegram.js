@@ -47,16 +47,20 @@ router.post('/webhook/:token', async (req, res) => {
         });
       } catch (_) {}
 
-      // Ambil data laporan
-      const reportText = await generatePerformanceReportText(userId);
+      // Lakukan secara asinkron agar Telegram webhook segera merespon 200 (mencegah infinite retry loop)
+      generatePerformanceReportText(userId).then(async (reportText) => {
+        try {
+          await axios.post(replyUrl, {
+            chat_id: chatId,
+            text: reportText,
+            parse_mode: 'HTML'
+          });
+          console.log(`[Telegram Webhook] Berhasil memproses laporan On-Demand untuk User ID: ${userId}`);
+        } catch (postErr) {
+          console.error('[Telegram Webhook] Gagal mengirim laporan balasan:', postErr.message);
+        }
+      }).catch(err => console.error('[Telegram Webhook] Gagal generate laporan:', err));
 
-      // Kirim hasil laporan kinerja asli
-      await axios.post(replyUrl, {
-        chat_id: chatId,
-        text: reportText,
-        parse_mode: 'HTML'
-      });
-      console.log(`[Telegram Webhook] Berhasil memproses laporan On-Demand untuk User ID: ${userId}`);
     } else if (text === '/start' || text === '/help') {
       const replyUrl = `https://api.telegram.org/bot${token}/sendMessage`;
       await axios.post(replyUrl, {
