@@ -1,6 +1,6 @@
 {
-  "installCommand": "npm install && npm install --prefix frontend",
-  "buildCommand": "npm install --prefix frontend && npm run build --prefix frontend",
+  "installCommand": "npm install && cd frontend && npm install --include=dev",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "functions": {
     "api/index.js": {
