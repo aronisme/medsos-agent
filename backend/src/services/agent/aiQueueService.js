@@ -358,7 +358,19 @@ async function callCopywritingAI(options = {}) {
         'deepseek/deepseek-v4-flash',      // Tier 5c: DeepSeek V4 Flash
       ];
 
+      // [B2] Circuit Breaker: Jika 2 model berturut-turut gagal, langsung
+      // skip ke Groq (paling cepat & reliable dengan 3-key LPU rotation).
+      // Mencegah worst-case 7 model × 35s timeout = ~4 menit per panggilan.
+      // Circuit breaker direset setiap panggilan baru (tidak permanen).
+      let consecutiveFailures = 0;
+      const MAX_CONSECUTIVE_FAILURES = 2;
+
       for (const model of copywritingModels) {
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          console.warn(`[callCopywritingAI] Circuit breaker: ${consecutiveFailures} model xKiro gagal berturut-turut. Skip ke Groq fallback.`);
+          break;
+        }
+
         try {
           const res = await callXKiroAPI({
             systemPrompt,
@@ -369,9 +381,11 @@ async function callCopywritingAI(options = {}) {
             jsonMode
           });
           if (res) return res;
+          consecutiveFailures++; // Respons kosong dianggap kegagalan
         } catch (modelErr) {
+          consecutiveFailures++;
           const errMsg = modelErr.response?.data?.error?.message || modelErr.message;
-          console.warn(`[callCopywritingAI] Model ${model} dilewati (${errMsg}). Mengalihkan ke tier berikutnya...`);
+          console.warn(`[callCopywritingAI] Model ${model} dilewati (${errMsg}). Kegagalan berturut: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
         }
       }
     }

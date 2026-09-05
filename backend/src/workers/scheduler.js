@@ -7,44 +7,31 @@ const { evaluateExperiment } = require('../services/agent/experimentService');
 
 /**
  * Memproses postingan terjadwal yang sudah waktunya.
- * Fungsi ini dipanggil otomatis setiap menit oleh Google Apps Script / Cron.
+ * Fungsi ini dipanggil otomatis setiap 5 MENIT oleh Google Apps Script / Cron.
+ * 
+ * =====================================================================
+ * PENTING (untuk developer / GAS config):
+ * Interval trigger di Google Apps Script HARUS diset ke 5 menit.
+ * Jangan menggunakan interval 1 menit — ini menyebabkan konsumsi
+ * Vercel Fluid CPU yang sangat tinggi karena cold start setiap invocation.
+ * 
+ * Cara mengubah di GAS:
+ *   1. Buka https://script.google.com > project cron Anda
+ *   2. Buka menu Triggers (ikon jam)
+ *   3. Ubah time-driven trigger dari "Every minute" menjadi "Every 5 minutes"
+ * =====================================================================
  */
 async function processScheduledPosts() {
   const results = [];
   try {
     const now = Date.now();
 
-    // 0. CHECK FOR DAILY PERFORMANCE REPORT (08:00 WIB)
-    try {
-      const jakartaTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
-      const jakartaDate = new Date(jakartaTime);
-      const currentHour = jakartaDate.getHours();
-      
-      if (currentHour >= 8) {
-        // Find active users
-        const accountsSnap = await db.collection('social_accounts')
-          .where('is_active', 'in', [1, true, '1'])
-          .get();
+    // ================================================================
+    // TIER 1: FAST-PATH (Dijalankan setiap invocation ~5 menit)
+    // Target: < 500ms — hanya publish post terjadwal + baca lock
+    // ================================================================
 
-        const activeUserIds = new Set();
-        accountsSnap.forEach(d => {
-          const u = d.data().user_id;
-          if (u) activeUserIds.add(u);
-        });
-
-        const { sendDailyPerformanceReport } = require('../services/telegramService');
-        for (const uid of activeUserIds) {
-          // sendDailyPerformanceReport internally throttles to once per day using locks
-          await sendDailyPerformanceReport(uid).catch(err => {
-            console.error(`[scheduler] Failed to send daily Telegram report for user ${uid}:`, err.message);
-          });
-        }
-      }
-    } catch (reportErr) {
-      console.error('[scheduler] Daily Telegram performance report check error:', reportErr.message);
-    }
-
-    // 1. FAST-PATH (Dijalankan setiap menit): Publish postingan yang jatuh tempo
+    // 1. Publish postingan yang jatuh tempo
     // Menggunakan limit(10) untuk menghemat kuota Firestore reads
     const snapshot = await db.collection('posts')
       .where('status', '==', 'scheduled')
@@ -76,10 +63,7 @@ async function processScheduledPosts() {
       }
     }
 
-    // 2. PERSISTENT SERVERLESS RATE-LIMITING LOCK
-    // Pada serverless (Vercel) & Google Apps Script (GAS), pemanggilan asynchronous harus di-await
-    // agar proses tidak terbunuh sebelum selesai.
-    // Menggunakan dokumen Firestore 'scheduler_locks' agar throttling 10m / 15m / 30m / 12h benar-benar persisten.
+    // 2. Baca lock SEKALI untuk menentukan apakah ada heavy task yang perlu dipicu
     const lockRef = db.collection('system_state').doc('scheduler_locks');
     let lockData = {};
     try {
@@ -96,15 +80,50 @@ async function processScheduledPosts() {
     const lastTokenRefresh = Number(lockData.last_token_refresh_epoch) || 0;
     const lastInboundScan = Number(lockData.last_inbound_scan_epoch) || 0;
     const lastOutboundScan = Number(lockData.last_outbound_scan_epoch) || 0;
+    const lastCloudinaryCleanup = Number(lockData.last_cloudinary_cleanup_epoch) || 0;
 
+    // [A4] Interval constants — autonomous cycle dinaikkan dari 15m → 30m
+    // Aman karena scheduling bersifat idempoten: hasSlotCovered check ±30m
+    // mencegah duplikasi postingan bahkan jika cycle berjalan lebih jarang.
     const thirtyMinutes = 30 * 60 * 1000;
-    const fifteenMinutes = 15 * 60 * 1000;
+    const autonomousCycleInterval = 30 * 60 * 1000; // [A4] 30 menit (sebelumnya 15 menit)
     const tenMinutes = 10 * 60 * 1000;
     const twelveHours = 12 * 60 * 60 * 1000;
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+
+    // [A2] EARLY EXIT: Cek apakah ada background task yang perlu dipicu.
+    // Jika tidak ada, return segera setelah fast-path untuk menghemat CPU time.
+    const needsAnalyticsSync = (now - lastAnalyticsSync >= thirtyMinutes);
+    const needsAutonomousCycle = (now - lastAutonomousCycle >= autonomousCycleInterval);
+    const needsTokenRefresh = (now - lastTokenRefresh >= twelveHours);
+    const needsInboundScan = (now - lastInboundScan >= tenMinutes);
+    const needsOutboundScan = (now - lastOutboundScan >= thirtyMinutes);
+    const needsCloudinaryCleanup = (now - lastCloudinaryCleanup >= twentyFourHours);
+
+    // Cek daily report terpisah (berdasarkan jam WIB)
+    const jakartaTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
+    const jakartaDate = new Date(jakartaTime);
+    const currentHour = jakartaDate.getHours();
+    const needsDailyReport = (currentHour >= 8);
+
+    const needsHeavyWork = needsAnalyticsSync || needsAutonomousCycle ||
+      needsTokenRefresh || needsInboundScan || needsOutboundScan ||
+      needsCloudinaryCleanup || needsDailyReport;
+
+    if (!needsHeavyWork) {
+      // Tidak ada heavy task — return segera setelah fast-path
+      console.log('[scheduler] Fast-path selesai, tidak ada heavy task yang perlu dipicu.');
+      return results;
+    }
+
+    // ================================================================
+    // TIER 2: HEAVY BACKGROUND TASKS (Hanya jika lock menunjukkan perlu)
+    // ================================================================
 
     const updateLocks = {};
 
-    // Helper: Ambil seluruh active user IDs dari social_accounts
+    // [A3] DEDUPLIKASI: Query social_accounts SEKALI saja
+    // (sebelumnya di-query 2× di blok daily report dan di sini)
     const accountsSnap = await db.collection('social_accounts')
       .where('is_active', 'in', [1, true, '1'])
       .get();
@@ -121,8 +140,23 @@ async function processScheduledPosts() {
       }
     });
 
+    // Check 0: Daily Performance Report (08:00 WIB, throttled internally per day)
+    if (needsDailyReport) {
+      try {
+        const { sendDailyPerformanceReport } = require('../services/telegramService');
+        for (const uid of activeUserIds) {
+          // sendDailyPerformanceReport internally throttles to once per day using locks
+          await sendDailyPerformanceReport(uid).catch(err => {
+            console.error(`[scheduler] Failed to send daily Telegram report for user ${uid}:`, err.message);
+          });
+        }
+      } catch (reportErr) {
+        console.error('[scheduler] Daily Telegram performance report check error:', reportErr.message);
+      }
+    }
+
     // Check 1: Auto-Sync Analitik Meta & Link (Persisten setiap 30 menit)
-    if (now - lastAnalyticsSync >= thirtyMinutes) {
+    if (needsAnalyticsSync) {
       updateLocks.last_analytics_sync_epoch = now;
       for (const uid of activeUserIds) {
         try {
@@ -148,8 +182,8 @@ async function processScheduledPosts() {
       }
     }
 
-    // Check 2: Autonomous Cycle (Persisten setiap 15 menit)
-    if (now - lastAutonomousCycle >= fifteenMinutes) {
+    // Check 2: Autonomous Cycle (Persisten setiap 30 menit) [A4: sebelumnya 15 menit]
+    if (needsAutonomousCycle) {
       updateLocks.last_autonomous_cycle_epoch = now;
       for (const uid of activeUserIds) {
         try {
@@ -166,7 +200,7 @@ async function processScheduledPosts() {
     }
 
     // Check 3: Token Auto-Refresh (Persisten setiap 12 jam)
-    if (now - lastTokenRefresh >= twelveHours) {
+    if (needsTokenRefresh) {
       updateLocks.last_token_refresh_epoch = now;
       try {
         console.log('[scheduler] Menjalankan rutin Auto-Refresh Token (FB, IG, Threads)...');
@@ -177,7 +211,7 @@ async function processScheduledPosts() {
     }
 
     // Check 4: Inbound Threads Auto-Reply Polling (Persisten setiap 10 menit)
-    if (now - lastInboundScan >= tenMinutes) {
+    if (needsInboundScan) {
       updateLocks.last_inbound_scan_epoch = now;
       const { scanAndProcessInboundReplies } = require('../services/threads/inbound/inboundService');
       for (const uid of activeThreadsUserIds) {
@@ -192,7 +226,7 @@ async function processScheduledPosts() {
     }
 
     // Check 5: Outbound Social Listening Keyword Search (Persisten setiap 30 menit)
-    if (now - lastOutboundScan >= thirtyMinutes) {
+    if (needsOutboundScan) {
       updateLocks.last_outbound_scan_epoch = now;
       const { runOutboundSocialListening } = require('../services/threads/outbound/outboundService');
       for (const uid of activeThreadsUserIds) {
@@ -207,9 +241,7 @@ async function processScheduledPosts() {
     }
 
     // Check 6: Cloudinary Auto-Cleanup (Retensi 30 Hari, Dijalankan Setiap 24 Jam)
-    const twentyFourHours = 24 * 60 * 60 * 1000;
-    const lastCloudinaryCleanup = Number(lockData.last_cloudinary_cleanup_epoch) || 0;
-    if (now - lastCloudinaryCleanup >= twentyFourHours) {
+    if (needsCloudinaryCleanup) {
       updateLocks.last_cloudinary_cleanup_epoch = now;
       const { cleanupOldCloudinaryMedia } = require('../services/mediaRehostService');
       try {
@@ -234,4 +266,3 @@ async function processScheduledPosts() {
 }
 
 module.exports = { processScheduledPosts };
-

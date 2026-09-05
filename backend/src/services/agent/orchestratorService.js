@@ -8,7 +8,7 @@ const { diagnoseProductPerformance } = require('./diagnosticService');
 const { synthesizeKnowledge, getActiveKnowledgeInsights } = require('./knowledgeSynthesizer');
 const { logAgentDecision } = require('./decisionLogger');
 const { createExperiment, attachPostToExperiment } = require('./experimentService');
-const { syncAllPostsAnalytics } = require('../postAnalytics/syncService');
+// syncAllPostsAnalytics: import dihapus (A5) — sync sudah ditangani scheduler secara terpisah
 const crypto = require('crypto');
 
 const CANONICAL_NICHES = {
@@ -305,13 +305,11 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
     const quarter = getCurrentQuarter();
     logSteps.push(`Memulai Siklus Otonom ${quarter} untuk User ${userId}`);
 
-    // 0. PHASE 0: Pre-Cycle Analytics Sync (Meta API & Shortlinks Tracker)
-    try {
-      await syncAllPostsAnalytics(userId, { limit: 20 });
-      logSteps.push('Sinkronisasi Analitik: Berhasil menyinkronkan metrik Meta & klik link terbaru ke memori.');
-    } catch (syncErr) {
-      console.warn('[runAutonomousCycle Pre-Sync Warning]:', syncErr.message);
-    }
+    // 0. PHASE 0: Pre-Cycle Analytics Sync — DIHAPUS (Optimasi A5)
+    // syncAllPostsAnalytics() sudah dijalankan oleh scheduler (Check 1) secara terpisah
+    // pada interval 30 menit yang sama SEBELUM autonomous cycle dipicu (Check 2).
+    // Menghindari duplikasi Meta Graph API calls, Firestore writes, dan CPU time.
+    logSteps.push('Analytics Sync: Menggunakan data dari scheduler sync terakhir (deduplikasi).');
 
     // 1. PHASE 1: Synthesize Knowledge & Evaluasi Sesi Sebelumnya
     const newInsights = await synthesizeKnowledge(userId);
@@ -587,10 +585,18 @@ async function runAutonomousCycle(userId = 'system', opts = {}) {
         const mediaCuration = selectedMediaCuration;
         const isNoMediaMode = mediaCuration.media_type === 'text' || (platform === 'threads' && accountThreadsMediaMode === 'no_media');
 
-        // 6.1. Profile Produk (Zero Redundant AI Calls: gunakan cache jika sudah ada)
-        const profile = (selectedProduct.agent_profile && selectedProduct.agent_profile.niche)
-          ? selectedProduct.agent_profile
-          : await profileShopeeProduct(selectedProduct, userId);
+        // 6.1. Profile Produk [B1] — Cache yang lebih ketat + persist ke memori batch
+        // Gunakan profil yang sudah ada jika lengkap (niche + pain_points),
+        // sesuai dengan check di profileShopeeProduct line 32
+        let profile;
+        if (selectedProduct.agent_profile && selectedProduct.agent_profile.niche && selectedProduct.agent_profile.pain_points?.length > 0) {
+          profile = selectedProduct.agent_profile;
+        } else {
+          profile = await profileShopeeProduct(selectedProduct, userId);
+          // Persist kembali ke objek in-memory agar loop batch berikutnya
+          // tidak memanggil AI ulang untuk produk yang sama dalam siklus ini
+          selectedProduct.agent_profile = profile;
+        }
 
         const formattedMedia = isNoMediaMode
           ? []

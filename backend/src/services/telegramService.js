@@ -56,12 +56,14 @@ async function generatePerformanceReportText(userId) {
     const oneDayAgoIso = oneDayAgo.toISOString();
 
     // 1. Ambil klik link 24 jam terakhir
+    // [A6] Filter langsung di query level — menghindari full-scan seluruh link_clicks
+    // Field 'timestamp' disimpan sebagai ISO string di redirect.js line 401
     const clicksSnap = await db.collection('link_clicks')
       .where('user_id', '==', userId)
+      .where('timestamp', '>=', oneDayAgoIso)
       .get();
 
-    const clicksDocs = clicksSnap.docs.map(d => d.data());
-    const recentClicks = clicksDocs.filter(c => (c.timestamp || '') >= oneDayAgoIso);
+    const recentClicks = clicksSnap.docs.map(d => d.data());
 
     const totalClicks = recentClicks.length;
     const botClicks = recentClicks.filter(c => c.counted_as_human === false || c.is_bot).length;
@@ -123,13 +125,16 @@ async function generatePerformanceReportText(userId) {
     }
 
     // 3. Hitung postingan yang dipublish 24 jam terakhir
+    // [A7] Filter status di query level + limit untuk menghindari full-scan
     const postsSnap = await db.collection('posts')
       .where('user_id', '==', userId)
+      .where('status', '==', 'posted')
+      .limit(100)
       .get();
       
     const recentPosts = postsSnap.docs
       .map(d => d.data())
-      .filter(p => p.status === 'posted' && (p.posted_at || p.updated_at || '') >= oneDayAgoIso);
+      .filter(p => (p.posted_at || p.updated_at || '') >= oneDayAgoIso);
 
     const activeAccountsSnap = await db.collection('social_accounts')
       .where('user_id', '==', userId)
